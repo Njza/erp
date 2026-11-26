@@ -97,7 +97,11 @@ const num = (n: number) => String(+n.toFixed(2));
           <button type="button" (click)="history.close()">关闭</button>
         </menu>
       </dialog>
+    </div>
 
+    <!-- On a wide screen the form and the preview sit side by side, so each edit shows at once. -->
+    <div class="layout">
+    <div class="no-print form">
       <!-- The form follows the order a bill is written in. Enter moves to the next box, like Tab. -->
       <div class="steps" (keydown.enter)="nextField($event)">
         <section>
@@ -193,9 +197,10 @@ const num = (n: number) => String(+n.toFixed(2));
         </div>
         <p class="muted">这些设置只保存在这台电脑的浏览器里。打印出来位置不对时，先打一张，用尺量出偏差，再填到偏移里。</p>
       </details>
-
-      <h2>打印预览 <small class="muted">{{ zoom() < 1 ? '屏幕较窄，已缩小显示；打印仍是实际尺寸' : '实际尺寸' }}</small></h2>
     </div>
+
+    <div class="side">
+      <h2 class="no-print">打印预览 <small class="muted">{{ zoom() < 1 ? '屏幕较窄，已缩小显示；打印仍是实际尺寸' : '实际尺寸' }}</small></h2>
 
     <div #preview class="preview">
       <!-- 2mm shorter than the paper: a sheet that is exactly page-high can spill onto a second, blank fold. -->
@@ -248,6 +253,8 @@ const num = (n: number) => String(+n.toFixed(2));
         </div>
       </section>
     </div>
+    </div>
+    </div>
   `,
   styles: `
     .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -289,6 +296,13 @@ const num = (n: number) => String(+n.toFixed(2));
     details { margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
     summary { cursor: pointer; margin-bottom: 8px; }
     .preview { overflow-x: auto; padding-bottom: 16px; }
+    /* Wide enough for the entry table (~680px) and a readable preview beside it. */
+    @media screen and (min-width: 1500px) {
+      .layout { display: grid; grid-template-columns: minmax(680px, 1fr) minmax(0, 9.5in); gap: 16px; align-items: start; }
+      .layout .form details { margin-top: 0; }
+      .side { position: sticky; top: 64px; } /* below the sticky action bar */
+      .side h2 { margin-top: 0; }
+    }
 
     /* ---- The sheet: millimetres and points only, so the screen preview equals the print. ----
        Dot-matrix rules: pure black on white, no greys; a Song typeface at 10.5pt or larger;
