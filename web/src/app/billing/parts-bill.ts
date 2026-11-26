@@ -60,8 +60,10 @@ const num = (n: number) => String(+n.toFixed(2));
             <button (click)="newBill()">新建</button>
             <button [disabled]="busy()" (click)="save()" title="快捷键 Ctrl+S">保存</button>
             <button class="primary" [disabled]="busy()" (click)="saveAndPrint()" title="快捷键 Ctrl+P">保存并打印</button>
+            <button [disabled]="busy()" (click)="downloadPdf()" title="先保存，再下载这张单据的 PDF">下载PDF</button>
           } @else {
             <button class="primary" [disabled]="!bill.id" (click)="print()" title="快捷键 Ctrl+P">打印</button>
+            <button [disabled]="!bill.id || busy()" (click)="downloadPdf()">下载PDF</button>
           }
         </div>
       </header>
@@ -204,8 +206,8 @@ const num = (n: number) => String(+n.toFixed(2));
 
     <div #preview class="preview">
       <!-- 2mm shorter than the paper: a sheet that is exactly page-high can spill onto a second, blank fold. -->
-      <section class="sheet" [style.zoom]="zoom()" [style.height]="'calc(' + paper().height + 'in - 2mm)'"
-               [style.padding-left.mm]="13 + (settings.offsetX || 0)" [style.padding-top.mm]="6 + (settings.offsetY || 0)">
+      <section class="sheet" [class.flat]="capturing()" [style.zoom]="capturing() ? 1 : zoom()" [style.height]="'calc(' + paper().height + 'in - 2mm)'"
+               [style.padding-left.mm]="13 + (capturing() ? 0 : settings.offsetX || 0)" [style.padding-top.mm]="6 + (capturing() ? 0 : settings.offsetY || 0)">
         <h1>{{ settings.company }}更换配件清单</h1>
         <div class="line">
           <span>录单日期：<u>{{ dateText() }}</u></span>
@@ -326,6 +328,7 @@ const num = (n: number) => String(+n.toFixed(2));
     .sheet .signs, .sheet .copies { display: flex; justify-content: space-between; align-items: center; height: 8mm; }
     .sheet .copies { height: 6mm; }
 
+    .sheet.flat { border: 0; } /* while the PDF picture is taken */
     @media print {
       .preview { overflow: visible; padding: 0; }
       .sheet { border: 0; zoom: 1 !important; } /* the screen preview may be scaled down; paper never is */
@@ -385,6 +388,7 @@ export class PartsBill {
 
   canWrite = inject(AuthService).has('bill.write');
   busy = signal(false);
+  capturing = signal(false); // the sheet shows the plain paper layout: no screen zoom, frame or printer calibration
   printCount = signal(0); // of the open bill
   settings = this.loadSettings();
   setupOpen = !this.settings.company; // decided once: it must not close while the header is being typed
@@ -538,6 +542,31 @@ export class PartsBill {
     if (id) this.http.post(`/api/parts-bills/${id}/printed`, null).subscribe(() => {
       if (id === this.bill.id) this.printCount.update(n => n + 1);
     });
+  }
+
+  /** Saves first (like printing), then downloads the sheet as a one-page PDF of the paper's size. */
+  async downloadPdf() {
+    const problem = this.printProblem();
+    if (problem) { this.notify.error(problem); return; }
+    if (this.canWrite && (this.dirty() || !this.bill.id) && !(await this.save())) return;
+    const sheet = this.preview().nativeElement.querySelector<HTMLElement>('.sheet')!;
+    const w = 9.5 * 25.4, h = this.paper().height * 25.4 - 2; // mm, as the sheet's CSS size
+    const px = (mm: number) => Math.round(mm * 96 / 25.4);
+    this.busy.set(true);
+    this.capturing.set(true);
+    this.view.detectChanges();
+    try {
+      // Loaded on demand: the two libraries are large and only this button needs them.
+      const [{ toPng }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')]);
+      // shortcut: the PDF is a 3x picture of the sheet (no selectable text), because embedding a
+      // Chinese font in jsPDF costs megabytes; switch to a server-side PDF if text must be searchable.
+      const png = await toPng(sheet, { width: px(w), height: px(h), pixelRatio: 3, backgroundColor: '#fff', skipFonts: true });
+      const pdf = new jsPDF({ unit: 'mm', format: [w, h], orientation: w > h ? 'l' : 'p', compress: true });
+      pdf.addImage(png, 'PNG', 0, 0, w, h, undefined, 'FAST'); // fast compression; without it a 3x sheet is ~13 MB
+      pdf.save(`更换配件清单-${this.bill.no || this.bill.date}.pdf`);
+    } catch {
+      this.notify.error('PDF 生成失败，请重试。');
+    } finally { this.busy.set(false); this.capturing.set(false); }
   }
 
   printText(count: number) { return count ? `已打印 ${count} 次` : '未打印'; }
