@@ -1,7 +1,8 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
+import { ActivatedRouteSnapshot, CanActivateFn, Route, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { NotifyService } from './notify';
 
 export interface Me { id: number; username: string; displayName: string; permissions: string[] }
 
@@ -45,6 +46,12 @@ export const authGuard: CanActivateFn = async route => {
   if (!auth.me()) {
     try { await auth.loadMe(); } catch { return router.parseUrl('/login'); }
   }
-  const perm = route.data['perm'] as string | undefined;
-  return !perm || auth.has(perm) || router.parseUrl('/');
+  const allowed = (r: Route | ActivatedRouteSnapshot) => !r.data?.['perm'] || auth.has(r.data['perm']);
+  if (allowed(route)) return true;
+  // Not allowed here: go to the first menu page this user may open.
+  const first = route.parent?.routeConfig?.children?.find(r => r.data?.['label'] && allowed(r));
+  if (first) return router.parseUrl('/' + first.path);
+  inject(NotifyService).error('您的账号还没有任何页面的访问权限，请联系管理员。');
+  auth.logout();
+  return false;
 };

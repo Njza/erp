@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { ChangeDetectorRef, Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, afterNextRender, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../core/auth';
@@ -18,6 +18,7 @@ type PaperKey = keyof typeof PAPERS;
 const MAX_ROWS = PAPERS.full.rows;
 
 const SETTINGS_KEY = 'erp.partsBill.settings';
+const HANDLER_KEY = 'erp.partsBill.handler'; // the last 经手人 typed on this PC, offered on the next new bill
 // shortcut: the company header and printer calibration are saved in this browser only,
 // so each PC enters them once; move them to a server-side settings table when several PCs print.
 const DEFAULT_SETTINGS = {
@@ -37,27 +38,34 @@ interface BillSummary { id: number; no: string; date: string; customer: string; 
 const isEmpty = (r: Row) => !r.name && !r.unit && r.qty === null && r.price === null;
 const blankRow = (): Row => ({ name: '', unit: '', qty: null, qtyUnit: '台', price: null });
 
+function lastHandler() {
+  try { return localStorage.getItem(HANDLER_KEY) ?? ''; } catch { return ''; }
+}
+
 /** 650 -> "650", 650.5 -> "650.5", 0.125 -> "0.13" */
 const num = (n: number) => String(+n.toFixed(2));
 
 @Component({
   imports: [FormsModule],
+  host: { '(document:keydown)': 'shortcut($event)', '(window:beforeunload)': 'warnUnload($event)' },
   template: `
     <div class="no-print">
-      <header class="page-head">
-        <h1>更换配件清单 <small class="muted">{{ bill.id ? '已保存' : '未保存' }}</small></h1>
+      <header class="page-head bar">
+        <h1>更换配件清单 <small [class.warn]="status() !== '已保存'">{{ status() }}</small></h1>
         <div class="buttons">
           <button (click)="openHistory()">历史记录</button>
           @if (canWrite) {
             <button (click)="newBill()">新建</button>
-            <button [disabled]="busy()" (click)="save()">保存</button>
-            <button class="primary" [disabled]="busy() || !!problem()" (click)="saveAndPrint()">保存并打印</button>
+            <button [disabled]="busy()" (click)="save()" title="快捷键 Ctrl+S">保存</button>
+            <button class="primary" [disabled]="busy()" (click)="saveAndPrint()" title="快捷键 Ctrl+P">保存并打印</button>
           } @else {
-            <button class="primary" [disabled]="!bill.id || !!problem()" (click)="print()">打印</button>
+            <button class="primary" [disabled]="!bill.id" (click)="print()" title="快捷键 Ctrl+P">打印</button>
           }
         </div>
       </header>
-      @if (problem(); as p) { <p class="problem" role="alert">{{ p }}</p> }
+      @if (!settings.company) {
+        <p class="setup" role="status">第一次在这台电脑上使用：请先在下方“打印设置”里填写公司抬头，之后才能打印。</p>
+      }
 
       <dialog #history class="history">
         <h2>历史记录</h2>
@@ -87,49 +95,76 @@ const num = (n: number) => String(+n.toFixed(2));
         </menu>
       </dialog>
 
-      <div class="fields">
-        <label>录单日期 <input type="date" name="date" [(ngModel)]="bill.date" (change)="suggestNo()"></label>
-        <label>单据编号 <input name="no" [(ngModel)]="bill.no"></label>
-        <label>经手人 <input name="handler" [(ngModel)]="bill.handler"></label>
-        <label>使用单位 <input name="customer" [(ngModel)]="bill.customer" list="customer-list" autocomplete="off"></label>
-        <label>出仓领件人 <input name="picker" [(ngModel)]="bill.picker"></label>
-        <label>维修安装员 <input name="installer" [(ngModel)]="bill.installer"></label>
-        <label>使用单位收货人 <input name="receiver" [(ngModel)]="bill.receiver"></label>
-        <fieldset>
-          <legend>附加说明</legend>
-          <label class="check"><input type="checkbox" name="settle" [(ngModel)]="bill.settle"> 配件更换完毕即结算</label>
-          <label class="check"><input type="checkbox" name="warranty" [(ngModel)]="bill.warranty"> 配件保修半年，易损件除外</label>
-        </fieldset>
+      <!-- The form follows the order a bill is written in. Enter moves to the next box, like Tab. -->
+      <div class="steps" (keydown.enter)="nextField($event)">
+        <section>
+          <h2>1. 单据信息</h2>
+          <div class="fields">
+            <label class="wide">使用单位
+              <input #first name="customer" [(ngModel)]="bill.customer" list="customer-list" autocomplete="off" placeholder="输入几个字，从客户库里选">
+            </label>
+            <label>录单日期 <input type="date" name="date" [(ngModel)]="bill.date" (change)="suggestNo()"></label>
+            <label>单据编号 <input name="no" [(ngModel)]="bill.no"></label>
+            <label>经手人 <input name="handler" [(ngModel)]="bill.handler"></label>
+          </div>
+        </section>
+
+        <section>
+          <h2>2. 配件明细 <small class="muted">按 Enter 跳到下一格。选中产品后自动带出单位，数量默认为 1。</small></h2>
+          <table class="entry">
+            <thead><tr><th>序号</th><th>配件名称</th><th>单位（梯号）</th><th>数量</th><th>单位</th><th>单价（元）</th><th>金额</th><th></th></tr></thead>
+            <tbody>
+              @for (r of formRows(); track $index; let i = $index) {
+                <tr>
+                  <td>{{ i + 1 }}</td>
+                  <td><input [name]="'name' + i" [(ngModel)]="r.name" (ngModelChange)="pickProduct(r, $event)" list="product-list"
+                             autocomplete="off" [attr.aria-label]="'第' + (i + 1) + '行配件名称'"></td>
+                  <td><input [name]="'unit' + i" [(ngModel)]="r.unit" list="customer-list" autocomplete="off"
+                             [attr.aria-label]="'第' + (i + 1) + '行单位（梯号）'"></td>
+                  <td><input type="number" min="0" step="any" [name]="'qty' + i" [(ngModel)]="r.qty" [attr.aria-label]="'第' + (i + 1) + '行数量'"></td>
+                  <td><input [name]="'qtyUnit' + i" [(ngModel)]="r.qtyUnit" [attr.aria-label]="'第' + (i + 1) + '行数量单位'"></td>
+                  <td><input type="number" min="0" step="any" [name]="'price' + i" [(ngModel)]="r.price" [attr.aria-label]="'第' + (i + 1) + '行单价'"></td>
+                  <td class="amount">{{ amountText(r) }}</td>
+                  <td>
+                    @if (!rowEmpty(r)) {
+                      <button type="button" class="x" tabindex="-1" (click)="removeRow(i)" title="删除这一行，下面的行上移"
+                              [attr.aria-label]="'删除第' + (i + 1) + '行'">×</button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+            <tfoot>
+              <tr><td colspan="8" class="amount">合计：<strong>￥{{ numText(total()) }} 元</strong>　{{ upper() }}</td></tr>
+            </tfoot>
+          </table>
+          <p class="muted">库里没有的名称可以直接输入。只填名称的一行会原样打印，可用来写配件编号。</p>
+        </section>
+
+        <section>
+          <h2>3. 签字与说明</h2>
+          <div class="fields">
+            <label>维修安装员 <input name="installer" [(ngModel)]="bill.installer"></label>
+            <label>出仓领件人 <input name="picker" [(ngModel)]="bill.picker" placeholder="可留空，打印后手签"></label>
+            <label>使用单位收货人 <input name="receiver" [(ngModel)]="bill.receiver" placeholder="可留空，打印后手签"></label>
+            <fieldset>
+              <legend>附加说明</legend>
+              <label class="check"><input type="checkbox" name="settle" [(ngModel)]="bill.settle"> 配件更换完毕即结算</label>
+              <label class="check"><input type="checkbox" name="warranty" [(ngModel)]="bill.warranty"> 配件保修半年，易损件除外</label>
+            </fieldset>
+          </div>
+        </section>
       </div>
 
-      <table class="entry">
-        <thead><tr><th>序号</th><th>配件名称</th><th>单位（梯号）</th><th>数量</th><th>单位</th><th>单价（元）</th><th>金额</th></tr></thead>
-        <tbody>
-          @for (r of formRows(); track $index; let i = $index) {
-            <tr>
-              <td>{{ i + 1 }}</td>
-              <td><input [name]="'name' + i" [(ngModel)]="r.name" (ngModelChange)="pickProduct(r, $event)" list="product-list"
-                         autocomplete="off" [attr.aria-label]="'第' + (i + 1) + '行配件名称'"></td>
-              <td><input [name]="'unit' + i" [(ngModel)]="r.unit" list="customer-list" autocomplete="off"
-                         [attr.aria-label]="'第' + (i + 1) + '行单位（梯号）'"></td>
-              <td><input type="number" min="0" step="any" [name]="'qty' + i" [(ngModel)]="r.qty" [attr.aria-label]="'第' + (i + 1) + '行数量'"></td>
-              <td><input [name]="'qtyUnit' + i" [(ngModel)]="r.qtyUnit" placeholder="台" [attr.aria-label]="'第' + (i + 1) + '行数量单位'"></td>
-              <td><input type="number" min="0" step="any" [name]="'price' + i" [(ngModel)]="r.price" [attr.aria-label]="'第' + (i + 1) + '行单价'"></td>
-              <td class="amount">{{ amountText(r) }}</td>
-            </tr>
-          }
-        </tbody>
-      </table>
-      <!-- The browser's own suggestion list: it filters as the user types, with the unit shown beside each name. -->
+      <!-- The browser's own suggestion lists: they filter as the user types. -->
       <datalist id="product-list">
         @for (p of products(); track p.id) { <option [value]="p.name">{{ p.unit }}</option> }
       </datalist>
       <datalist id="customer-list">
         @for (c of customers(); track c.id) { <option [value]="c.name"></option> }
       </datalist>
-      <p class="muted">“使用单位”和每行的“单位（梯号）”会按客户库给出提示。配件名称会按产品库给出提示，选中后自动带出单位；也可以直接输入库里没有的名称。只填名称的行会原样打印，可用来写配件编号。数量和单价都填了才计算金额。</p>
 
-      <details>
+      <details [open]="setupOpen">
         <summary>打印设置（公司抬头、纸张、位置校准）</summary>
         <div class="fields">
           <label>公司名称 <input name="company" [(ngModel)]="settings.company" (change)="saveSettings()"></label>
@@ -216,13 +251,26 @@ const num = (n: number) => String(+n.toFixed(2));
     .history .r { text-align: right; }
     .history menu { align-items: center; }
     .history menu span { margin-right: auto; }
-    .problem { color: var(--danger); }
+    /* The action bar stays in view while the form scrolls. */
+    .bar { position: sticky; top: 0; z-index: 5; margin: -12px 0 12px; padding: 12px 0; background: var(--bg); align-items: center; }
+    .bar h1 { margin: 0; }
+    h1 small.warn { color: var(--danger); }
+    .setup { padding: 10px 12px; border: 1px solid var(--accent); border-radius: 6px; }
+    .steps section { margin-bottom: 16px; padding: 16px 16px 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+    .steps h2 small { font-size: 12px; font-weight: normal; margin-left: 8px; }
+    .fields .wide { grid-column: span 2; }
+    table.entry { border: 0; }
+    table.entry tfoot td { padding: 10px 12px; border-bottom: 0; }
+    table.entry th:last-child { width: 40px; }
+    button.x { padding: 2px 8px; border-color: transparent; background: none; color: var(--muted); }
+    button.x:hover { color: var(--danger); }
     .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 16px; }
     .fields fieldset { grid-column: span 2; }
     select { display: block; width: 100%; margin-top: 4px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
     table.entry td { padding: 3px 4px; }
     table.entry input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
-    table.entry th:nth-child(1) { width: 48px; }
+    table.entry th { white-space: nowrap; }
+    table.entry th:nth-child(1) { width: 60px; }
     table.entry th:nth-child(4), table.entry th:nth-child(5) { width: 90px; }
     table.entry th:nth-child(6), table.entry th:nth-child(7) { width: 120px; }
     table.entry .amount { text-align: right; }
@@ -269,11 +317,15 @@ export class PartsBill {
   // in an async callback the view must be told to refresh.
   private view = inject(ChangeDetectorRef);
   private historyDialog = viewChild.required<ElementRef<HTMLDialogElement>>('history');
+  private first = viewChild.required<ElementRef<HTMLInputElement>>('first');
+  rowEmpty = isEmpty;
 
   canWrite = inject(AuthService).has('bill.write');
   busy = signal(false);
   settings = this.loadSettings();
+  setupOpen = !this.settings.company; // decided once: it must not close while the header is being typed
   bill = this.blankBill();
+  private savedJson = JSON.stringify(this.bill); // the bill as last saved or loaded, to detect unsaved edits
 
   products = signal<Product[]>([]);
   customers = signal<Customer[]>([]);
@@ -289,6 +341,7 @@ export class PartsBill {
   constructor() {
     // The browser takes the paper size from @page, which cannot be bound in a template.
     this.suggestNo();
+    afterNextRender(() => this.first().nativeElement.focus());
     this.http.get<Product[]>('/api/products').subscribe(p => this.products.set(p));
     this.http.get<Customer[]>('/api/customers').subscribe(c => this.customers.set(c));
     const style = document.createElement('style');
@@ -309,10 +362,53 @@ export class PartsBill {
     return isItem(rows[i]) ? rows.slice(0, i + 1).filter(isItem).length : '';
   }
 
-  /** A name that is exactly a product's name takes that product's unit. */
+  /** A name that is exactly a product's name fills in what usually follows: its unit, quantity 1, and the bill's customer. */
   pickProduct(r: Row, name: string) {
     const product = this.products().find(p => p.name === name);
-    if (product) r.qtyUnit = product.unit;
+    if (!product) return;
+    r.qtyUnit = product.unit;
+    r.qty ??= 1;
+    r.unit ||= this.bill.customer;
+  }
+
+  /** Removes a line; the lines below move up, so the printed bill has no gap. */
+  removeRow(i: number) {
+    this.bill.rows.splice(i, 1);
+    this.bill.rows.push(blankRow());
+  }
+
+  /** Enter moves to the next box of the form, like Tab. */
+  nextField(e: Event) {
+    const box = e.target;
+    if (!(box instanceof HTMLInputElement) || box.type === 'checkbox') return;
+    e.preventDefault();
+    const boxes = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLInputElement>('input:not([type=checkbox])')];
+    const next = boxes[boxes.indexOf(box) + 1];
+    next?.focus();
+    next?.select();
+  }
+
+  /** Ctrl/Cmd+S saves. Ctrl/Cmd+P prints through the app, so the bill is saved first and only the sheet is printed. */
+  shortcut(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const key = e.key.toLowerCase();
+    if (key !== 's' && key !== 'p') return;
+    e.preventDefault();
+    if (this.busy()) return;
+    if (key === 's') { if (this.canWrite) this.save(); }
+    else if (this.canWrite) this.saveAndPrint();
+    else if (this.bill.id) this.print();
+  }
+
+  warnUnload(e: BeforeUnloadEvent) {
+    if (this.dirty()) e.preventDefault(); // the browser then asks before closing or reloading
+  }
+
+  dirty() { return JSON.stringify(this.bill) !== this.savedJson; }
+
+  status() {
+    if (!this.bill.id) return this.dirty() ? '未保存' : '新单据';
+    return this.dirty() ? '有未保存的修改' : '已保存';
   }
 
   amount(r: Row) { return r.qty !== null && r.price !== null ? r.qty * r.price : null; }
@@ -325,19 +421,33 @@ export class PartsBill {
     return y ? `${y}年${m}月${d}日` : '';
   }
 
-  /** Why printing is blocked, or '' when the sheet is ready. */
-  problem() {
-    if (!this.settings.company) return '请先在“打印设置”里填写公司名称。';
+  /** Why the bill cannot be saved, or ''. */
+  saveProblem() {
+    if (!this.bill.customer.trim()) return '请填写使用单位。';
+    if (!this.bill.no.trim()) return '请填写单据编号。';
+    if (this.bill.rows.every(isEmpty)) return '请至少填写一行配件。';
     if (this.bill.rows.some(r => (r.qty ?? 0) < 0 || (r.price ?? 0) < 0)) return '数量和单价不能是负数。';
+    return '';
+  }
+
+  /** Why the sheet cannot be printed, or ''. */
+  printProblem() {
+    if (!this.settings.company) return '请先在“打印设置”里填写公司名称。';
     // shortcut: one sheet per bill, no continuation page; add paging if bills outgrow one sheet.
     const hidden = this.bill.rows.slice(this.paper().rows).some(r => !isEmpty(r));
     return hidden ? `当前纸张只能打印 ${this.paper().rows} 行，后面还有已填写的行。请换用整张纸或删掉多余的行。` : '';
   }
 
-  print() { window.print(); }
+  print() {
+    const problem = this.printProblem();
+    if (problem) this.notify.error(problem); else window.print();
+  }
+
 
   /** Saves the bill (create or update). Returns false when the server refused it; the interceptor shows why. */
   async save(): Promise<boolean> {
+    const problem = this.saveProblem();
+    if (problem) { this.notify.error(problem); return false; }
     const { id, rows, ...fields } = this.bill;
     let used = rows.length; // keep blank lines between items, drop the trailing ones
     while (used > 0 && isEmpty(rows[used - 1])) used--;
@@ -348,6 +458,8 @@ export class PartsBill {
       else this.bill.id = (await firstValueFrom(this.http.post<{ id: number }>('/api/parts-bills', body))).id;
     } catch { return false; }
     finally { this.busy.set(false); }
+    this.savedJson = JSON.stringify(this.bill);
+    try { localStorage.setItem(HANDLER_KEY, this.bill.handler); } catch { /* not remembered in a private window */ }
     this.view.markForCheck();
     this.notify.success('单据已保存。');
     return true;
@@ -355,13 +467,17 @@ export class PartsBill {
 
   /** Printing always saves first, so every printed bill is in the history. */
   async saveAndPrint() {
+    const problem = this.printProblem();
+    if (problem) { this.notify.error(problem); return; } // before saving, so the user fixes everything in one go
     if (await this.save()) this.print();
   }
 
   newBill() {
     if (!this.discardOk()) return;
     this.bill = this.blankBill();
+    this.savedJson = JSON.stringify(this.bill);
     this.suggestNo();
+    this.first().nativeElement.focus();
   }
 
   /** Asks the server for the next free number of the bill's date. Only for a bill that is not saved yet. */
@@ -369,7 +485,12 @@ export class PartsBill {
     if (this.bill.id || !this.canWrite || !this.bill.date) return;
     const bill = this.bill;
     this.http.get<{ no: string }>('/api/parts-bills/next-no', { params: { date: bill.date } })
-      .subscribe({ next: r => { bill.no = r.no; this.view.markForCheck(); }, error: () => { /* keep the local guess; the interceptor showed the error */ } });
+      .subscribe({ next: r => {
+        const clean = bill === this.bill && !this.dirty();
+        bill.no = r.no;
+        if (clean) this.savedJson = JSON.stringify(bill); // a suggested number is not an edit
+        this.view.markForCheck();
+      }, error: () => { /* keep the local guess; the interceptor showed the error */ } });
   }
 
   openHistory() {
@@ -390,14 +511,13 @@ export class PartsBill {
     // The form always has MAX_ROWS lines; the server stores only the used ones.
     const rows = [...saved.rows, ...Array.from({ length: MAX_ROWS - saved.rows.length }, blankRow)];
     this.bill = { ...this.blankBill(), ...saved, rows };
+    this.savedJson = JSON.stringify(this.bill);
     this.view.markForCheck();
     this.historyDialog().nativeElement.close();
   }
 
-  /** A bill that was never saved and has content would be lost: ask first. */
   private discardOk() {
-    const unsaved = !this.bill.id && (this.bill.customer || this.bill.rows.some(r => !isEmpty(r)));
-    return !unsaved || confirm('当前单据还没有保存，确定放弃吗？');
+    return !this.dirty() || confirm('当前单据有未保存的内容，确定放弃吗？');
   }
 
   saveSettings() {
@@ -418,7 +538,7 @@ export class PartsBill {
       id: 0, // 0 = not saved yet
       date: ymd.join('-'),
       no: ymd.join('') + '01', // a local guess; suggestNo() replaces it with the server's next free number
-      handler: '', customer: '', picker: '', installer: '', receiver: '',
+      handler: lastHandler(), customer: '', picker: '', installer: '', receiver: '',
       settle: true, warranty: false,
       rows: Array.from({ length: MAX_ROWS }, blankRow),
     };
