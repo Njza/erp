@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Api;
@@ -17,26 +18,31 @@ public static class RoleEndpoints
             .Select(r => new { r.Id, r.Name, r.Permissions }).ToListAsync())
             .RequirePermission(Perm.RoleRead);
 
-        g.MapPost("", async (SaveRoleRequest req, AppDb db) =>
+        g.MapPost("", async (SaveRoleRequest req, ClaimsPrincipal principal, AppDb db) =>
         {
-            var role = new Role { Name = req.Name.Trim(), Permissions = Validated(req.Permissions) };
+            var permissions = Validated(req.Permissions);
+            await principal.EnsureHolds(db, permissions);
+            var role = new Role { Name = req.Name.Trim(), Permissions = permissions };
             db.Roles.Add(role);
             await db.SaveChangesAsync();
             return new { role.Id };
         }).RequirePermission(Perm.RoleWrite);
 
-        g.MapPut("/{id:int}", async (int id, SaveRoleRequest req, AppDb db) =>
+        g.MapPut("/{id:int}", async (int id, SaveRoleRequest req, ClaimsPrincipal principal, AppDb db) =>
         {
             var role = await FindEditable(db, id);
+            var permissions = Validated(req.Permissions);
+            await principal.EnsureHolds(db, role.Permissions.Union(permissions));
             role.Name = req.Name.Trim();
-            role.Permissions = Validated(req.Permissions);
+            role.Permissions = permissions;
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequirePermission(Perm.RoleWrite);
 
-        g.MapDelete("/{id:int}", async (int id, AppDb db) =>
+        g.MapDelete("/{id:int}", async (int id, ClaimsPrincipal principal, AppDb db) =>
         {
             var role = await FindEditable(db, id);
+            await principal.EnsureHolds(db, role.Permissions);
             if (await db.Users.AnyAsync(u => u.Roles.Any(r => r.Id == id)))
                 throw new AppException(409, "IN_USE", "请先从所有用户中移除该角色，再删除。");
             db.Roles.Remove(role);

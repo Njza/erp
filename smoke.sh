@@ -14,7 +14,8 @@ BODY=
 check() {
   local status
   status=$(curl -s -o "$BODY_FILE" -D "$HEAD_FILE" -w '%{http_code}' -X "$4" "$API$5" \
-    -H "Authorization: Bearer $6" -H 'Content-Type: application/json' -d "${7:-}")
+    -H "Authorization: Bearer $6" -H 'Content-Type: application/json' -d "${7:-}" \
+    -H "X-Forwarded-For: 10.$((RANDOM % 250)).$((RANDOM % 250)).$((RANDOM % 250))") # a new client each time, so the login rate limit stays out of the way
   BODY=$(cat "$BODY_FILE")
   if [ "$status" != "$2" ] || { [ "$3" != - ] && [ "$(jq -r .code <<<"$BODY")" != "$3" ]; }; then
     echo "FAIL $1: got $status, want $2 $3. Body: $BODY"; exit 1
@@ -158,5 +159,38 @@ check "disable viewer"            204 - PUT "/users/$USER_ID" "$ADMIN" "{\"displ
 check "disabled user, old token"  403 FORBIDDEN           GET /users "$VIEWER"
 check "disabled user, products"   403 FORBIDDEN           GET /products "$VIEWER"
 check "disabled user cannot log in" 401 INVALID_CREDENTIALS POST /auth/login "" "$(login_json "viewer$S" Viewer@67890)"
+
+# Five wrong passwords lock the account, even against the right one; an administrator's password reset unlocks it.
+check "create lock user"          200 - POST /users "$ADMIN" "{\"username\":\"lock$S\",$NEW_USER,\"roleIds\":[]}"
+LOCK_ID=$(jq -r .id <<<"$BODY")
+for i in 1 2 3 4 5; do check "wrong password $i"   401 INVALID_CREDENTIALS POST /auth/login "" "$(login_json "lock$S" wrong-password)"; done
+check "locked: right password refused" 401 INVALID_CREDENTIALS POST /auth/login "" "$(login_json "lock$S" Viewer@12345)"
+check "admin resets password"     204 - PUT "/users/$LOCK_ID" "$ADMIN" "{\"displayName\":\"V\",\"isActive\":true,\"roleIds\":[],\"password\":\"Viewer@67890\"}"
+check "unlocked by the reset"     200 - POST /auth/login "" "$(login_json "lock$S" Viewer@67890)"
+
+# Holding role.write or user.write gives out only the permissions you hold yourself.
+check "create manager role"       200 - POST /roles "$ADMIN" "{\"name\":\"mgr$S\",\"permissions\":[\"user.read\",\"user.write\",\"role.read\",\"role.write\"]}"
+MGR_ROLE=$(jq -r .id <<<"$BODY")
+check "create manager"            200 - POST /users "$ADMIN" "{\"username\":\"mgr$S\",$NEW_USER,\"roleIds\":[$MGR_ROLE]}"
+MGR_ID=$(jq -r .id <<<"$BODY")
+check "manager login"             200 - POST /auth/login "" "$(login_json "mgr$S" Viewer@12345)"
+MGR=$(login_token)
+check "manager grants what they hold" 200 - POST /roles "$MGR" "{\"name\":\"sub$S\",\"permissions\":[\"user.read\"]}"
+check "manager grants more"       403 PERMISSION_NOT_HELD POST /roles "$MGR" "{\"name\":\"big$S\",\"permissions\":[\"bill.read\"]}"
+check "manager widens own role"   403 PERMISSION_NOT_HELD PUT "/roles/$MGR_ROLE" "$MGR" "{\"name\":\"mgr$S\",\"permissions\":[\"user.read\",\"user.write\",\"role.read\",\"role.write\",\"bill.read\"]}"
+check "manager gives self admin"  403 PERMISSION_NOT_HELD PUT "/users/$MGR_ID" "$MGR" "{\"displayName\":\"V\",\"isActive\":true,\"roleIds\":[$MGR_ROLE,1]}"
+check "manager creates an admin"  403 PERMISSION_NOT_HELD POST /users "$MGR" "{\"username\":\"adm$S\",$NEW_USER,\"roleIds\":[1]}"
+check "admin's id"                200 - GET /auth/me "$ADMIN"
+ADMIN_ID=$(jq -r .id <<<"$BODY")
+check "manager resets admin password" 403 PERMISSION_NOT_HELD PUT "/users/$ADMIN_ID" "$MGR" "{\"displayName\":\"Administrator\",\"isActive\":true,\"roleIds\":[1],\"password\":\"Taken@12345\"}"
+
+# Every user changes their own password; the old session ends, the new cookie works.
+check "own password, wrong current" 400 WRONG_PASSWORD     POST /auth/password "$MGR" '{"currentPassword":"nope","newPassword":"Mgr@123456"}'
+check "own password, too short"   400 HTTP_400            POST /auth/password "$MGR" '{"currentPassword":"Viewer@12345","newPassword":"123"}'
+check "change own password"       204 - POST /auth/password "$MGR" '{"currentPassword":"Viewer@12345","newPassword":"Mgr@123456"}'
+NEW_MGR=$(login_token)
+check "old session ended"         401 TOKEN_EXPIRED       GET /auth/me "$MGR"
+check "new cookie works"          200 - GET /auth/me "$NEW_MGR"
+check "login with new password"   200 - POST /auth/login "" "$(login_json "mgr$S" Mgr@123456)"
 
 echo "ALL PASSED"

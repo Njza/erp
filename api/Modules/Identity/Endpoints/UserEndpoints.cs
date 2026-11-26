@@ -27,7 +27,7 @@ public static class UserEndpoints
             .Select(u => new { u.Id, u.Username, u.DisplayName, u.IsActive, RoleIds = u.Roles.Select(r => r.Id) })
             .ToListAsync()).RequirePermission(Perm.UserRead);
 
-        g.MapPost("", async (CreateUserRequest req, AppDb db) =>
+        g.MapPost("", async (CreateUserRequest req, ClaimsPrincipal principal, AppDb db) =>
         {
             var user = new User
             {
@@ -35,6 +35,7 @@ public static class UserEndpoints
                 DisplayName = req.DisplayName.Trim(),
                 Roles = await db.Roles.Where(r => req.RoleIds.Contains(r.Id)).ToListAsync(),
             };
+            await principal.EnsureHolds(db, user.Roles.SelectMany(r => r.Permissions));
             user.PasswordHash = AuthEndpoints.Hasher.HashPassword(user, req.Password);
             db.Users.Add(user);
             await db.SaveChangesAsync(); // a duplicate username becomes 409 in AppExceptionHandler
@@ -46,6 +47,8 @@ public static class UserEndpoints
             var user = await db.Users.Include(u => u.Roles).SingleOrDefaultAsync(u => u.Id == id)
                 ?? throw new AppException(404, "NOT_FOUND", "用户不存在。");
             var roles = await db.Roles.Where(r => req.RoleIds.Contains(r.Id)).ToListAsync();
+            // Both sides: no granting more than you hold, and no taking over (e.g. resetting the password of) a stronger account.
+            await principal.EnsureHolds(db, user.Roles.Concat(roles).SelectMany(r => r.Permissions));
 
             // Guard against an administrator locking themself out.
             if (id == principal.UserId() && (!req.IsActive || !roles.Any(r => r.Permissions.Contains(Perm.UserWrite))))
@@ -58,6 +61,8 @@ public static class UserEndpoints
             {
                 user.PasswordHash = AuthEndpoints.Hasher.HashPassword(user, req.Password);
                 user.TokenVersion++; // signs this user out everywhere, the administrator included when it is their own password
+                user.FailedLogins = 0; // a new password also ends a lockout
+                user.LockedUntil = null;
             }
             await db.SaveChangesAsync();
             return Results.NoContent();

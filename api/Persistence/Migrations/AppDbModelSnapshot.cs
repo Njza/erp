@@ -17,7 +17,7 @@ partial class AppDbModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261126121337_AddUserTokenVersion";
+    public override string LastMigrationId => "20261126193658_AddLoginLockout";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -217,8 +217,14 @@ partial class AppDbModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasColumnType("text");
 
+                b.Property<int>("FailedLogins")
+                    .HasColumnType("integer");
+
                 b.Property<bool>("IsActive")
                     .HasColumnType("boolean");
+
+                b.Property<DateTime?>("LockedUntil")
+                    .HasColumnType("timestamp with time zone");
 
                 b.Property<string>("PasswordHash")
                     .IsRequired()

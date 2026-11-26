@@ -25,6 +25,18 @@ public static class AuthExtensions
     /// A token from before this claim existed counts as version 0, so it keeps working until the password changes.
     public static int TokenVersion(this ClaimsPrincipal user) => int.TryParse(user.FindFirstValue("ver"), out var v) ? v : 0;
 
+    /// Refuses unless the signed-in user holds every one of these permissions, so that nobody with
+    /// role.write or user.write can give out (to themself or anyone) more than they have.
+    public static async Task EnsureHolds(this ClaimsPrincipal principal, AppDb db, IEnumerable<string> permissions)
+    {
+        var id = principal.UserId();
+        var mine = (await db.Users.Where(u => u.Id == id).SelectMany(u => u.Roles.Select(r => r.Permissions)).ToListAsync())
+            .SelectMany(p => p);
+        var missing = permissions.Except(mine).ToArray();
+        if (missing.Length > 0)
+            throw new AppException(403, "PERMISSION_NOT_HELD", $"不能授予或改动您自己没有的权限：{string.Join("、", missing)}");
+    }
+
     public static AppException TokenExpired() => new(401, "TOKEN_EXPIRED", "登录已失效，请重新登录。");
 
     /// Permissions are read from the database on each request, so a role change

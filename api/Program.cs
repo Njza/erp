@@ -2,6 +2,7 @@ using System.Text;
 using System.Threading.RateLimiting;
 using Erp.Api;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -62,11 +63,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 });
 builder.Services.AddAuthorization();
 
+// The client IP (used by the login rate limit) comes from X-Forwarded-For only when the request comes
+// from ForwardedHeaders:KnownNetwork, the web container's network. Any other sender, such as another
+// container on the shared database network, is counted under its own address and cannot fake one.
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+    o.KnownIPNetworks.Clear();
+    o.KnownProxies.Clear();
+    foreach (var network in (cfg["ForwardedHeaders:KnownNetwork"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        o.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+});
+
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = 429;
-    // shortcut: counted per client IP in this process; behind a reverse proxy add
-    // UseForwardedHeaders, and with several instances move the counter to a shared store.
+    // shortcut: counted per client IP in this process; with several instances move the counter to a shared store.
     o.AddPolicy("login", http => RateLimitPartition.GetFixedWindowLimiter(
         http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new() { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }));
@@ -74,6 +86,7 @@ builder.Services.AddRateLimiter(o =>
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseStatusCodePages(); // gives bare 401/403/404/429 the same ProblemDetails body
 app.UseAuthentication();
