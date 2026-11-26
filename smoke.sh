@@ -50,6 +50,8 @@ grep -qi '^set-cookie: erp_token=;' "$HEAD_FILE" || { echo "FAIL: logout did not
 check "admin lists users"         200 - GET /users "$ADMIN"
 check "admin /me"                 200 - GET /auth/me "$ADMIN"
 jq -e '.permissions | index("role.write")' <<<"$BODY" >/dev/null || { echo "FAIL: admin lacks role.write"; exit 1; }
+check "version"                   200 - GET /version "$ADMIN"
+jq -e '.version | length > 0' <<<"$BODY" >/dev/null || { echo "FAIL: no version"; exit 1; }
 
 # A role that can only read users, and a user that has only that role.
 check "create role"               200 - POST /roles "$ADMIN" "{\"name\":\"viewer$S\",\"permissions\":[\"user.read\"]}"

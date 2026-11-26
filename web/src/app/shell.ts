@@ -1,4 +1,5 @@
-import { Component, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from './core/auth';
 
@@ -18,6 +19,7 @@ import { AuthService } from './core/auth';
         <div class="me">
           <span>{{ auth.me()?.displayName }}</span>
           <button (click)="auth.logout()">退出登录</button>
+          <small>版本 {{ version() }}</small>
         </div>
       </aside>
       <main><router-outlet /></main>
@@ -26,8 +28,13 @@ import { AuthService } from './core/auth';
 })
 export class Shell {
   protected auth = inject(AuthService);
+  protected version = signal('');
   // The menu is the child routes of this shell, so a new page is added in one place: app.routes.ts.
   protected nav = (inject(ActivatedRoute).routeConfig?.children ?? [])
     .filter(r => r.data?.['label'])
     .map(r => ({ path: '/' + r.path, label: r.data!['label'] as string, perm: r.data!['perm'] as string | undefined }));
+
+  constructor() {
+    inject(HttpClient).get<{ version: string }>('/api/version').subscribe(v => this.version.set(v.version));
+  }
 }

@@ -20,16 +20,33 @@ On a 1Panel server:
 2. **Settings.** `cp .env.example .env`, then set `DB_HOST` to that container name, the
    database name, user and password, a random `JWT_KEY`, and `ADMIN_PASSWORD`.
    `DB_NETWORK` stays `1panel-network`.
-3. **Start.** `docker compose up -d --build`. The API creates its tables on first start.
+3. **Start.** `./deploy.sh <latest tag>` (see Releases). The API creates its tables on first start.
 4. **Website.** In 1Panel → Websites, create a reverse-proxy site for your domain that
    forwards to `http://127.0.0.1:8080`, and enable HTTPS there.
 5. Sign in as `admin` with `ADMIN_PASSWORD` and change it on the 修改密码 page. Then delete
    `ADMIN_PASSWORD` from `.env` and run `docker compose up -d`: it is needed only on the first start.
 
-Update after a code change: `git pull && docker compose up -d --build`.
-
 The API needs a database user that may create tables in its own database. It touches no
 other database on the shared server.
+
+## Releases
+
+Every deployment is a release tag `vMAJOR.MINOR.PATCH` on `main`, starting at `v0.1.0`.
+Before 1.0, a release with new features or a change people must know about raises MINOR
+(`v0.2.0`); a release with fixes only raises PATCH (`v0.1.1`).
+
+1. **Release** (on your machine, `main` pushed and `./smoke.sh` passing):
+   ```bash
+   git tag -a v0.2.0 -m "v0.2.0"
+   git push origin v0.2.0
+   gh release create v0.2.0 --title v0.2.0 --notes "what changed, for the people who use it"
+   ```
+2. **Deploy** (on the server, in the checkout): `./deploy.sh v0.2.0`. It checks out the tag,
+   records it as `APP_VERSION` in `.env`, and rebuilds. The side menu shows the version.
+3. **Roll back**: `./deploy.sh v0.1.0`. Migrations do not run backwards, so going back past
+   a release that changed the database needs a database backup.
+
+The server's checkout sits on a tag (detached HEAD); never edit files there except `.env`.
 
 ## Run for development
 

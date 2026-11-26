@@ -102,6 +102,8 @@ api.MapPartsBills();
 api.MapProducts();
 api.MapNames();
 api.MapAudit();
+// The release tag this build came from (App:Version, set by deploy.sh); "dev" on a local build.
+api.MapGet("/version", () => new { version = cfg["App:Version"] ?? "dev" }).RequireAuthorization();
 
 await DbInit.RunAsync(app.Services, cfg);
 app.Run();

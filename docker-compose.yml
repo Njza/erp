@@ -4,9 +4,11 @@
 services:
   api:
     build: ./api
+    image: erp-api:${APP_VERSION:-dev} # one image per release, so an older one stays for a rollback
     restart: unless-stopped
     environment:
       ConnectionStrings__Default: Host=${DB_HOST:?set DB_HOST in .env};Port=${DB_PORT:-5432};Database=${DB_NAME:?set DB_NAME in .env};Username=${DB_USER:?set DB_USER in .env};Password=${DB_PASSWORD:?set DB_PASSWORD in .env}
+      App__Version: ${APP_VERSION:-dev} # shown in the side menu; deploy.sh sets it in .env
       Jwt__Key: ${JWT_KEY:?set JWT_KEY in .env}
       Seed__AdminPassword: ${ADMIN_PASSWORD:-} # first start only; remove it from .env afterwards
       # Take the client IP from X-Forwarded-For only on requests from the default network below, where
@@ -17,6 +19,7 @@ services:
 
   web:
     build: ./web
+    image: erp-web:${APP_VERSION:-dev}
     restart: unless-stopped
     depends_on: [api]
     ports:
