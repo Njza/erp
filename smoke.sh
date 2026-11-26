@@ -6,14 +6,14 @@
 set -euo pipefail
 API=${1:-http://localhost:5283/api}
 ADMIN_PW=${2:-Admin@12345}
-BODY_FILE=$(mktemp); trap 'rm -f "$BODY_FILE"' EXIT
+BODY_FILE=$(mktemp); HEAD_FILE=$(mktemp); trap 'rm -f "$BODY_FILE" "$HEAD_FILE"' EXIT
 BODY=
 
 # check NAME WANT_STATUS WANT_CODE METHOD PATH TOKEN [JSON]   (WANT_CODE "-" = do not check)
 # Leaves the response body in $BODY.
 check() {
   local status
-  status=$(curl -s -o "$BODY_FILE" -w '%{http_code}' -X "$4" "$API$5" \
+  status=$(curl -s -o "$BODY_FILE" -D "$HEAD_FILE" -w '%{http_code}' -X "$4" "$API$5" \
     -H "Authorization: Bearer $6" -H 'Content-Type: application/json' -d "${7:-}")
   BODY=$(cat "$BODY_FILE")
   if [ "$status" != "$2" ] || { [ "$3" != - ] && [ "$(jq -r .code <<<"$BODY")" != "$3" ]; }; then
@@ -21,6 +21,8 @@ check() {
   fi
   echo "ok   $1"
 }
+# The token of the login that check() just made. It comes in a cookie, never in the body.
+login_token() { tr -d '\r' <"$HEAD_FILE" | sed -n 's/^[Ss]et-[Cc]ookie: erp_token=\([^;]*\).*/\1/p'; }
 login_json() { echo "{\"username\":\"$1\",\"password\":\"$2\"}"; }
 S=$RANDOM
 NEW_USER="\"displayName\":\"V\",\"password\":\"Viewer@12345\""
@@ -33,7 +35,17 @@ check "no token"                  401 HTTP_401            GET  /users ""
 check "unknown route"             404 HTTP_404            GET  /nope ""
 
 check "admin login"               200 - POST /auth/login "" "$(login_json admin "$ADMIN_PW")"
-ADMIN=$(jq -r .token <<<"$BODY")
+ADMIN=$(login_token)
+[ -n "$ADMIN" ] && grep -qi '^set-cookie: erp_token=.*httponly' "$HEAD_FILE" || { echo "FAIL: login did not set an HttpOnly cookie"; exit 1; }
+[ "$(jq -r '.token // empty' <<<"$BODY")" = "" ] || { echo "FAIL: login returned the token in the body"; exit 1; }
+# The cookie counts only together with the X-Requested-With header (CSRF).
+cookie_status() { curl -s -o /dev/null -w '%{http_code}' -X "$1" "$API$2" -H "Cookie: erp_token=$ADMIN" "${@:3}"; }
+[ "$(cookie_status GET /auth/me)" = 401 ] || { echo "FAIL: cookie accepted without the CSRF header"; exit 1; }
+[ "$(cookie_status POST /users -H 'Content-Type: application/json' -d '{}')" = 401 ] || { echo "FAIL: POST with cookie accepted without the CSRF header"; exit 1; }
+[ "$(cookie_status GET /auth/me -H 'X-Requested-With: erp')" = 200 ] || { echo "FAIL: cookie with the CSRF header refused"; exit 1; }
+echo "ok   cookie login and CSRF header"
+check "logout"                    204 - POST /auth/logout ""
+grep -qi '^set-cookie: erp_token=;' "$HEAD_FILE" || { echo "FAIL: logout did not remove the cookie"; exit 1; }
 check "admin lists users"         200 - GET /users "$ADMIN"
 check "admin /me"                 200 - GET /auth/me "$ADMIN"
 jq -e '.permissions | index("role.write")' <<<"$BODY" >/dev/null || { echo "FAIL: admin lacks role.write"; exit 1; }
@@ -48,7 +60,7 @@ check "short password"            400 HTTP_400            POST /users "$ADMIN" "
 check "unknown permission"        400 UNKNOWN_PERMISSION  POST /roles "$ADMIN" "{\"name\":\"bad$S\",\"permissions\":[\"nope\"]}"
 
 check "viewer login"              200 - POST /auth/login "" "$(login_json "viewer$S" Viewer@12345)"
-VIEWER=$(jq -r .token <<<"$BODY")
+VIEWER=$(login_token)
 check "viewer may read users"     200 - GET /users "$VIEWER"
 check "viewer may not write users" 403 FORBIDDEN          POST /users "$VIEWER" "{\"username\":\"y$S\",$NEW_USER,\"roleIds\":[]}"
 check "viewer may not read roles" 403 FORBIDDEN           GET  /roles "$VIEWER"
@@ -135,10 +147,16 @@ check "delete customer"           204 - DELETE "/names/customer/$CUSTOMER_ID" "$
 check "add deleted customer again" 200 - POST /names/customer "$ADMIN" "{\"name\":\"cust$S-b\"}"
 [ "$(jq -r .id <<<"$BODY")" = "$CUSTOMER_ID" ] || { echo "FAIL: re-adding did not restore the same record"; exit 1; }
 
+# A password change must end the sessions that used the old password.
+check "change viewer password"    204 - PUT "/users/$USER_ID" "$ADMIN" "{\"displayName\":\"Viewer\",\"isActive\":true,\"roleIds\":[$ROLE],\"password\":\"Viewer@67890\"}"
+check "old token after password change" 401 TOKEN_EXPIRED GET /users "$VIEWER"
+check "old token, me"             401 TOKEN_EXPIRED       GET /auth/me "$VIEWER"
+check "viewer login, new password" 200 - POST /auth/login "" "$(login_json "viewer$S" Viewer@67890)"
+VIEWER=$(login_token)
 # Disabling a user must take effect on the token they already hold.
 check "disable viewer"            204 - PUT "/users/$USER_ID" "$ADMIN" "{\"displayName\":\"Viewer\",\"isActive\":false,\"roleIds\":[$ROLE]}"
 check "disabled user, old token"  403 FORBIDDEN           GET /users "$VIEWER"
 check "disabled user, products"   403 FORBIDDEN           GET /products "$VIEWER"
-check "disabled user cannot log in" 401 INVALID_CREDENTIALS POST /auth/login "" "$(login_json "viewer$S" Viewer@12345)"
+check "disabled user cannot log in" 401 INVALID_CREDENTIALS POST /auth/login "" "$(login_json "viewer$S" Viewer@67890)"
 
 echo "ALL PASSED"

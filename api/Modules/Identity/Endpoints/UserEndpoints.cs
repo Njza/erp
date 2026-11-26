@@ -54,7 +54,11 @@ public static class UserEndpoints
             user.DisplayName = req.DisplayName.Trim();
             user.IsActive = req.IsActive;
             user.Roles = roles;
-            if (req.Password is not null) user.PasswordHash = AuthEndpoints.Hasher.HashPassword(user, req.Password);
+            if (req.Password is not null)
+            {
+                user.PasswordHash = AuthEndpoints.Hasher.HashPassword(user, req.Password);
+                user.TokenVersion++; // signs this user out everywhere, the administrator included when it is their own password
+            }
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequirePermission(Perm.UserWrite);

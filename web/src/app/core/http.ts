@@ -4,12 +4,11 @@ import { catchError, throwError } from 'rxjs';
 import { AuthService } from './auth';
 import { NotifyService } from './notify';
 
-/** Adds the token, and shows every API error as a toast. Pages do not show HTTP errors themselves. */
+/** Marks the request as ours (the API ignores the login cookie without this header), and shows every API error as a toast. Pages do not show HTTP errors themselves. */
 export const apiInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const notify = inject(NotifyService);
-  const token = auth.token();
-  if (token) req = req.clone({ setHeaders: { Authorization: `Bearer ${token}` } });
+  req = req.clone({ setHeaders: { 'X-Requested-With': 'erp' } });
 
   return next(req).pipe(catchError((e: HttpErrorResponse) => {
     if (e.status === 401 && !req.url.endsWith('/auth/login')) {

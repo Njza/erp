@@ -17,7 +17,7 @@ public class TokenService(SymmetricSecurityKey key)
         var token = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
             Issuer = Issuer,
-            Subject = new ClaimsIdentity([new Claim("sub", user.Id.ToString())]),
+            Subject = new ClaimsIdentity([new Claim("sub", user.Id.ToString()), new Claim("ver", user.TokenVersion.ToString())]),
             Expires = expires,
             SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256),
         });

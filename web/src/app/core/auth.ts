@@ -6,33 +6,35 @@ import { NotifyService } from './notify';
 
 export interface Me { id: number; username: string; displayName: string; permissions: string[] }
 
-const TOKEN_KEY = 'erp.token';
+// The token itself is in an HttpOnly cookie that scripts cannot read. This flag only says
+// "try the session", so a visitor who never signed in goes to the login page without an API call.
+const SIGNED_IN_KEY = 'erp.signedIn';
+localStorage.removeItem('erp.token'); // the token was kept here before it moved to the cookie
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private http = inject(HttpClient);
   private router = inject(Router);
 
-  // shortcut: token in localStorage, readable by any script on the page;
-  // move to an HttpOnly cookie if third-party scripts are ever added.
-  readonly token = signal(localStorage.getItem(TOKEN_KEY));
+  readonly signedIn = signal(localStorage.getItem(SIGNED_IN_KEY) !== null);
   readonly me = signal<Me | null>(null);
 
   /** Hides UI only. The server checks every request again. */
   has(permission: string) { return this.me()?.permissions.includes(permission) ?? false; }
 
   async login(username: string, password: string) {
-    const res = await firstValueFrom(this.http.post<{ token: string }>('/api/auth/login', { username, password }));
-    localStorage.setItem(TOKEN_KEY, res.token);
-    this.token.set(res.token);
+    await firstValueFrom(this.http.post('/api/auth/login', { username, password }));
+    localStorage.setItem(SIGNED_IN_KEY, '1');
+    this.signedIn.set(true);
     await this.loadMe();
   }
 
   async loadMe() { this.me.set(await firstValueFrom(this.http.get<Me>('/api/auth/me'))); }
 
   logout() {
-    localStorage.removeItem(TOKEN_KEY);
-    this.token.set(null);
+    this.http.post('/api/auth/logout', null).subscribe({ error: () => {} }); // removes the cookie
+    localStorage.removeItem(SIGNED_IN_KEY);
+    this.signedIn.set(false);
     this.me.set(null);
     this.router.navigateByUrl('/login');
   }
@@ -42,7 +44,7 @@ export class AuthService {
 export const authGuard: CanActivateFn = async route => {
   const auth = inject(AuthService);
   const router = inject(Router);
-  if (!auth.token()) return router.parseUrl('/login');
+  if (!auth.signedIn()) return router.parseUrl('/login');
   if (!auth.me()) {
     try { await auth.loadMe(); } catch { return router.parseUrl('/login'); }
   }

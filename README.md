@@ -62,8 +62,8 @@ api/                       one project, one namespace; a modular monolith
   Persistence/             AppDb (DbContext), DbInit (migrate + seed), Migrations/
   Dockerfile
 web/src/app/
-  core/auth.ts             AuthService (token, me, has()), authGuard
-  core/http.ts             apiInterceptor (token + error toast), AppErrorHandler
+  core/auth.ts             AuthService (signedIn, me, has()), authGuard
+  core/http.ts             apiInterceptor (CSRF header + error toast), AppErrorHandler
   core/notify.ts           NotifyService: the only way to show a message
   app.routes.ts            routes; also the source of the side menu
   shell.ts                 layout with the side menu
@@ -83,6 +83,13 @@ docker-compose.dev.yml   development: local Postgres only
 database on every request, so a role change or a disabled user takes effect at once.
 The `admin` role is built in and gets every code at startup. The UI hides what the user
 cannot do with `auth.has('code')`; that is cosmetic, the API is the gate.
+
+**Session.** Login sets the token in an HttpOnly cookie (`erp_token`, `SameSite=Strict`,
+`Secure` outside development); the response body never contains it, so a script on the page
+cannot read it. The API accepts the cookie only on a request that has an `X-Requested-With`
+header, which the web app adds to every call and another site cannot (CSRF). Programs may
+send the same token in an `Authorization: Bearer` header instead. Changing a password ends
+that user's sessions. The site must be served over HTTPS, or the browser drops the cookie.
 
 **Errors.** Every non-2xx response is RFC 9457 ProblemDetails:
 

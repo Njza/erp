@@ -45,6 +45,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         ValidIssuer = TokenService.Issuer,
         ValidateAudience = false,
         IssuerSigningKey = jwtKey,
+        ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+    };
+    // Browsers send the token in a cookie (see AuthExtensions.TokenCookie); programs may send an Authorization header.
+    o.Events = new()
+    {
+        OnMessageReceived = ctx =>
+        {
+            var req = ctx.Request;
+            if (!req.Headers.ContainsKey("Authorization") && req.Headers.ContainsKey(AuthExtensions.CsrfHeader)
+                && req.Cookies.TryGetValue(AuthExtensions.TokenCookie, out var token))
+                ctx.Token = token;
+            return Task.CompletedTask;
+        },
     };
 });
 builder.Services.AddAuthorization();
