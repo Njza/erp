@@ -35,7 +35,8 @@ interface Bill {
 }
 interface BillSummary { id: number; no: string; date: string; customer: string; handler: string; total: number }
 
-const isEmpty = (r: Row) => !r.name && !r.unit && r.qty === null && r.price === null;
+// unit is not looked at: it is not typed per line, it follows the bill's 使用单位.
+const isEmpty = (r: Row) => !r.name && r.qty === null && r.price === null;
 const blankRow = (): Row => ({ name: '', unit: '', qty: null, qtyUnit: '台', price: null });
 
 function lastHandler() {
@@ -110,17 +111,15 @@ const num = (n: number) => String(+n.toFixed(2));
         </section>
 
         <section>
-          <h2>2. 配件明细 <small class="muted">按 Enter 跳到下一格。选中产品后自动带出单位，数量默认为 1。</small></h2>
+          <h2>2. 配件明细 <small class="muted">按 Enter 跳到下一格。选中产品后自动带出单位，数量默认为 1。打印时“单位（梯号）”一栏就是使用单位。</small></h2>
           <table class="entry">
-            <thead><tr><th>序号</th><th>配件名称</th><th>单位（梯号）</th><th>数量</th><th>单位</th><th>单价（元）</th><th>金额</th><th></th></tr></thead>
+            <thead><tr><th>序号</th><th>配件名称</th><th>数量</th><th>单位</th><th>单价（元）</th><th>金额</th><th></th></tr></thead>
             <tbody>
               @for (r of formRows(); track $index; let i = $index) {
                 <tr [class.spare]="i > usedRows()">
                   <td class="no">{{ i + 1 }}</td>
                   <td data-label="配件名称"><input enterkeyhint="next" [name]="'name' + i" [(ngModel)]="r.name" (ngModelChange)="pickProduct(r, $event)" list="product-list"
                              autocomplete="off" [attr.aria-label]="'第' + (i + 1) + '行配件名称'"></td>
-                  <td data-label="单位（梯号）"><input enterkeyhint="next" [name]="'unit' + i" [(ngModel)]="r.unit" list="customer-list" autocomplete="off"
-                             [attr.aria-label]="'第' + (i + 1) + '行单位（梯号）'"></td>
                   <td data-label="数量"><input enterkeyhint="next" type="number" min="0" step="any" [name]="'qty' + i" [(ngModel)]="r.qty" [attr.aria-label]="'第' + (i + 1) + '行数量'"></td>
                   <td data-label="单位"><input enterkeyhint="next" [name]="'qtyUnit' + i" [(ngModel)]="r.qtyUnit" [attr.aria-label]="'第' + (i + 1) + '行数量单位'"></td>
                   <td data-label="单价（元）"><input enterkeyhint="next" type="number" min="0" step="any" [name]="'price' + i" [(ngModel)]="r.price" [attr.aria-label]="'第' + (i + 1) + '行单价'"></td>
@@ -135,7 +134,7 @@ const num = (n: number) => String(+n.toFixed(2));
               }
             </tbody>
             <tfoot>
-              <tr><td colspan="8" class="amount">合计：<strong>￥{{ numText(total()) }} 元</strong>　{{ upper() }}</td></tr>
+              <tr><td colspan="7" class="amount">合计：<strong>￥{{ numText(total()) }} 元</strong>　{{ upper() }}</td></tr>
             </tfoot>
           </table>
           <p class="muted">库里没有的名称可以直接输入。只填名称的一行会原样打印，可用来写配件编号。</p>
@@ -144,7 +143,7 @@ const num = (n: number) => String(+n.toFixed(2));
         <section>
           <h2>3. 签字与说明</h2>
           <div class="fields">
-            <label>维修安装员 <input enterkeyhint="next" name="installer" [(ngModel)]="bill.installer"></label>
+            <label>维修安装员 <input enterkeyhint="next" name="installer" [(ngModel)]="bill.installer" list="installer-list" autocomplete="off"></label>
             <label>出仓领件人 <input enterkeyhint="next" name="picker" [(ngModel)]="bill.picker" placeholder="可留空，打印后手签"></label>
             <label>使用单位收货人 <input enterkeyhint="next" name="receiver" [(ngModel)]="bill.receiver" placeholder="可留空，打印后手签"></label>
             <fieldset>
@@ -162,6 +161,9 @@ const num = (n: number) => String(+n.toFixed(2));
       </datalist>
       <datalist id="handler-list">
         @for (h of handlers(); track h) { <option [value]="h"></option> }
+      </datalist>
+      <datalist id="installer-list">
+        @for (n of installers(); track n) { <option [value]="n"></option> }
       </datalist>
       <datalist id="customer-list">
         @for (c of customers(); track c.id) { <option [value]="c.name"></option> }
@@ -223,7 +225,7 @@ const num = (n: number) => String(+n.toFixed(2));
               <tr>
                 <td class="c">{{ numberOf(i) }}</td>
                 <td>{{ r.name }}</td>
-                <td>{{ r.unit }}</td>
+                <td>{{ isItem(r) ? bill.customer : '' }}</td>
                 <td class="c">{{ r.qty === null ? '' : numText(r.qty) + r.qtyUnit }}</td>
                 <td class="c">{{ r.price === null ? '' : numText(r.price) + '元' }}</td>
                 <td class="c">{{ amountText(r) }}</td>
@@ -272,14 +274,14 @@ const num = (n: number) => String(+n.toFixed(2));
     select { display: block; width: 100%; margin-top: 4px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
     table.entry td { padding: 3px 4px; }
     table.entry input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
-    /* Fixed layout: the narrow columns keep their width, and the two name columns share the rest. */
+    /* Fixed layout: the narrow columns keep their width, and the name column takes the rest. */
     table.entry { table-layout: fixed; }
     table.entry th { white-space: nowrap; }
     table.entry th:nth-child(1) { width: 52px; }
-    table.entry th:nth-child(4) { width: 76px; }
-    table.entry th:nth-child(5) { width: 68px; }
-    table.entry th:nth-child(6) { width: 100px; }
-    table.entry th:nth-child(7) { width: 92px; }
+    table.entry th:nth-child(3) { width: 90px; }
+    table.entry th:nth-child(4) { width: 80px; }
+    table.entry th:nth-child(5) { width: 120px; }
+    table.entry th:nth-child(6) { width: 110px; }
     table.entry .amount { text-align: right; }
     details { margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
     summary { cursor: pointer; margin-bottom: 8px; }
@@ -330,16 +332,15 @@ const num = (n: number) => String(+n.toFixed(2));
       table.entry tr {
         display: grid; gap: 6px 8px; padding: 10px 0; border-bottom: 1px solid var(--border);
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        grid-template-areas: "no no del" "name name name" "unit unit unit" "qty qunit price" "amount amount amount";
+        grid-template-areas: "no no del" "name name name" "qty qunit price" "amount amount amount";
       }
       table.entry td { display: block; padding: 0; border: 0; }
       table.entry td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 12px; color: var(--muted); }
       table.entry td.no { grid-area: no; align-self: center; font-weight: 600; }
       table.entry td.no::before { content: "第 "; } table.entry td.no::after { content: " 行"; }
       table.entry td.del { grid-area: del; text-align: right; }
-      table.entry td:nth-child(2) { grid-area: name; } table.entry td:nth-child(3) { grid-area: unit; }
-      table.entry td:nth-child(4) { grid-area: qty; } table.entry td:nth-child(5) { grid-area: qunit; }
-      table.entry td:nth-child(6) { grid-area: price; }
+      table.entry td:nth-child(2) { grid-area: name; } table.entry td:nth-child(3) { grid-area: qty; }
+      table.entry td:nth-child(4) { grid-area: qunit; } table.entry td:nth-child(5) { grid-area: price; }
       table.entry td.amount { grid-area: amount; }
       table.entry td.amount::before { display: inline; margin-right: 8px; }
       table.entry td.amount:empty { display: none; }
@@ -375,6 +376,7 @@ export class PartsBill {
   products = signal<Product[]>([]);
   customers = signal<Customer[]>([]);
   handlers = signal<string[]>([]); // names used on earlier bills
+  installers = signal<string[]>([]);
 
   // History dialog state.
   q = '';
@@ -398,6 +400,7 @@ export class PartsBill {
     this.http.get<Product[]>('/api/products').subscribe(p => this.products.set(p));
     this.http.get<Customer[]>('/api/customers').subscribe(c => this.customers.set(c));
     this.http.get<string[]>('/api/parts-bills/handlers').subscribe(h => this.handlers.set(h));
+    this.http.get<string[]>('/api/parts-bills/installers').subscribe(n => this.installers.set(n));
     const style = document.createElement('style');
     document.head.appendChild(style);
     effect(onCleanup => {
@@ -418,17 +421,15 @@ export class PartsBill {
   /** Rows are numbered only when they are an item (have a quantity or price), like the paper original. */
   numberOf(i: number) {
     const rows = this.bill.rows;
-    const isItem = (r: Row) => r.qty !== null || r.price !== null;
-    return isItem(rows[i]) ? rows.slice(0, i + 1).filter(isItem).length : '';
+    return this.isItem(rows[i]) ? rows.slice(0, i + 1).filter(this.isItem).length : '';
   }
 
-  /** A name that is exactly a product's name fills in what usually follows: its unit, quantity 1, and the bill's customer. */
+  /** A name that is exactly a product's name fills in what usually follows: its unit and quantity 1. */
   pickProduct(r: Row, name: string) {
     const product = this.products().find(p => p.name === name);
     if (!product) return;
     r.qtyUnit = product.unit;
     r.qty ??= 1;
-    r.unit ||= this.bill.customer;
   }
 
   /** Removes a line; the lines below move up, so the printed bill has no gap. */
@@ -472,6 +473,9 @@ export class PartsBill {
     return this.dirty() ? '有未保存的修改' : '已保存';
   }
 
+  /** A line with a quantity or a price is an item; a line with only a name is a note. */
+  isItem = (r: Row) => r.qty !== null || r.price !== null;
+
   amount(r: Row) { return r.qty !== null && r.price !== null ? r.qty * r.price : null; }
   amountText(r: Row) { const a = this.amount(r); return a === null ? '' : num(a) + '元'; }
   total() { return this.bill.rows.reduce((sum, r) => sum + (this.amount(r) ?? 0), 0); }
@@ -510,7 +514,9 @@ export class PartsBill {
     const problem = this.saveProblem();
     if (problem) { this.notify.error(problem); return false; }
     const { id, rows, ...fields } = this.bill;
-    const body = { ...fields, rows: rows.slice(0, this.usedRows()) }; // blank lines between items stay, trailing ones go
+    // Blank lines between items stay, trailing ones go. 单位（梯号） is always the bill's 使用单位, as printed.
+    const customer = this.bill.customer.trim();
+    const body = { ...fields, rows: rows.slice(0, this.usedRows()).map(r => ({ ...r, unit: this.isItem(r) ? customer : '' })) };
     this.busy.set(true);
     try {
       if (id) await firstValueFrom(this.http.put(`/api/parts-bills/${id}`, body));
@@ -518,8 +524,12 @@ export class PartsBill {
     } catch { return false; }
     finally { this.busy.set(false); }
     this.savedJson = JSON.stringify(this.bill);
-    const handler = this.bill.handler.trim(); // a new name is offered at once, without reloading the list
-    if (handler && !this.handlers().includes(handler)) this.handlers.update(list => [...list, handler].sort());
+    // A new name is offered at once, without reloading the lists.
+    const offer = (names: typeof this.handlers, name: string) => {
+      if (name && !names().includes(name)) names.update(list => [...list, name].sort());
+    };
+    offer(this.handlers, this.bill.handler.trim());
+    offer(this.installers, this.bill.installer.trim());
     try { localStorage.setItem(HANDLER_KEY, this.bill.handler); } catch { /* not remembered in a private window */ }
     this.view.markForCheck();
     this.notify.success('单据已保存。');

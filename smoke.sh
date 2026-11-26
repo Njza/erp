@@ -58,7 +58,7 @@ check "admin role is read-only"   400 BUILT_IN_ROLE       PUT /roles/1 "$ADMIN" 
 
 # Parts bills: save, server-side total, unique number, history search, permissions.
 BILL_NO="T$S"
-BILL="{\"no\":\"$BILL_NO\",\"date\":\"2026-01-02\",\"customer\":\"smoke$S\",\"handler\":\"h$S\",\"settle\":true,\"warranty\":false,\"rows\":[{\"name\":\"a\",\"unit\":\"\",\"qty\":2,\"qtyUnit\":\"x\",\"price\":1.5},{\"name\":\"note only\"}]}"
+BILL="{\"no\":\"$BILL_NO\",\"date\":\"2026-01-02\",\"customer\":\"smoke$S\",\"handler\":\"h$S\",\"installer\":\"i$S\",\"settle\":true,\"warranty\":false,\"rows\":[{\"name\":\"a\",\"unit\":\"\",\"qty\":2,\"qtyUnit\":\"x\",\"price\":1.5},{\"name\":\"note only\"}]}"
 check "create bill"               200 - POST /parts-bills "$ADMIN" "$BILL"
 BILL_ID=$(jq -r .id <<<"$BODY")
 check "duplicate bill number"     409 DUPLICATE           POST /parts-bills "$ADMIN" "$BILL"
@@ -69,6 +69,8 @@ check "search history"            200 - GET "/parts-bills?q=smoke$S" "$ADMIN"
 jq -e '.total == 1 and .items[0].total == 6' <<<"$BODY" >/dev/null || { echo "FAIL: history: $BODY"; exit 1; }
 check "handler suggestions"       200 - GET /parts-bills/handlers "$ADMIN"
 jq -e --arg h "h$S" 'index($h) != null' <<<"$BODY" >/dev/null || { echo "FAIL: handler not suggested: $BODY"; exit 1; }
+check "installer suggestions"     200 - GET /parts-bills/installers "$ADMIN"
+jq -e --arg i "i$S" 'index($i) != null' <<<"$BODY" >/dev/null || { echo "FAIL: installer not suggested: $BODY"; exit 1; }
 check "next number of a day"      200 - GET "/parts-bills/next-no?date=1999-01-02" "$ADMIN"
 [ "$(jq -r .no <<<"$BODY")" = "1999010201" ] || { echo "FAIL: next number: $BODY"; exit 1; }
 check "negative price"            400 INVALID_ROWS           POST /parts-bills "$ADMIN" "{\"no\":\"N$S\",\"date\":\"2026-01-02\",\"rows\":[{\"name\":\"a\",\"qty\":1,\"price\":-1}]}"
