@@ -44,7 +44,7 @@ Before 1.0, a release with new features or a change people must know about raise
 2. **Deploy**: automatic. Pushing the tag runs `.github/workflows/ci.yml`; when the checks pass,
    it runs `./deploy.sh v0.2.0` on the server (set up once, see below). By hand, on the server
    in the checkout: `./deploy.sh v0.2.0`. It checks out the tag, records it as `APP_VERSION`
-   in `.env`, and rebuilds. The side menu shows the version, and open pages offer to reload
+   in `.env`, and rebuilds. The account menu (top right) shows the version, and open pages offer to reload
    (检查更新, or every 5 minutes when 自动检查更新 is on).
 3. **Roll back**: `./deploy.sh v0.1.0`. Migrations do not run backwards, so going back past
    a release that changed the database needs a database backup.
@@ -112,7 +112,7 @@ web/src/app/
   core/auth.ts             AuthService (signedIn, me, has()), authGuard
   core/http.ts             apiInterceptor (CSRF header + error toast), AppErrorHandler
   core/notify.ts           NotifyService: the only way to show a message
-  app.routes.ts            routes; also the source of the side menu
+  app.routes.ts            routes; also the source of the top menu
   shell.ts                 layout with the side menu
   identity/                login, users, roles
   billing/                 parts-bill, rmb (amount in Chinese capitals)
