@@ -17,7 +17,7 @@ partial class AppDbModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261126193658_AddLoginLockout";
+    public override string LastMigrationId => "20261126194238_AddRevokedTokensAndAudit";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -27,6 +27,45 @@ partial class AppDbModelSnapshot : ModelSnapshot
             .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
         NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+        modelBuilder.Entity("Erp.Api.AuditEntry", b =>
+            {
+                var id = b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("bigint");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<string>("Action")
+                    .IsRequired()
+                    .HasColumnType("text");
+
+                b.Property<DateTime>("At")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Changes")
+                    .IsRequired()
+                    .HasColumnType("jsonb");
+
+                b.Property<string>("Entity")
+                    .IsRequired()
+                    .HasColumnType("text");
+
+                b.Property<string>("EntityId")
+                    .IsRequired()
+                    .HasColumnType("text");
+
+                b.Property<int?>("UserId")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("At");
+
+                b.HasIndex("Entity", "EntityId");
+
+                b.ToTable("AuditEntries");
+            });
 
         modelBuilder.Entity("Erp.Api.NameOption", b =>
             {
@@ -176,6 +215,19 @@ partial class AppDbModelSnapshot : ModelSnapshot
                     .IsUnique();
 
                 b.ToTable("Products");
+            });
+
+        modelBuilder.Entity("Erp.Api.RevokedToken", b =>
+            {
+                b.Property<string>("Id")
+                    .HasColumnType("text");
+
+                b.Property<DateTime>("ExpiresAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.ToTable("RevokedTokens");
             });
 
         modelBuilder.Entity("Erp.Api.Role", b =>

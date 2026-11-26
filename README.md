@@ -23,7 +23,8 @@ On a 1Panel server:
 3. **Start.** `docker compose up -d --build`. The API creates its tables on first start.
 4. **Website.** In 1Panel → Websites, create a reverse-proxy site for your domain that
    forwards to `http://127.0.0.1:8080`, and enable HTTPS there.
-5. Sign in as `admin` with `ADMIN_PASSWORD`, then change it by editing the user.
+5. Sign in as `admin` with `ADMIN_PASSWORD` and change it on the 修改密码 page. Then delete
+   `ADMIN_PASSWORD` from `.env` and run `docker compose up -d`: it is needed only on the first start.
 
 Update after a code change: `git pull && docker compose up -d --build`.
 
@@ -89,7 +90,8 @@ cannot do with `auth.has('code')`; that is cosmetic, the API is the gate.
 cannot read it. The API accepts the cookie only on a request that has an `X-Requested-With`
 header, which the web app adds to every call and another site cannot (CSRF). Programs may
 send the same token in an `Authorization: Bearer` header instead. Changing a password ends
-that user's sessions. The site must be served over HTTPS, or the browser drops the cookie.
+that user's sessions. Signing out revokes that one token. Five wrong passwords lock an account
+for 15 minutes. Every create, change and delete is written to the audit log (操作日志, `audit.read`). The site must be served over HTTPS, or the browser drops the cookie.
 
 **Errors.** Every non-2xx response is RFC 9457 ProblemDetails:
 

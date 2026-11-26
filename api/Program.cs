@@ -13,6 +13,7 @@ var jwtKeyText = cfg["Jwt:Key"] ?? "";
 if (jwtKeyText.Length < 32) throw new InvalidOperationException("Set Jwt:Key to a random secret of at least 32 characters.");
 var jwtKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKeyText));
 
+builder.Services.AddHttpContextAccessor(); // AppDb reads the signed-in user for the audit log
 builder.Services.AddDbContext<AppDb>(o => o.UseNpgsql(cfg.GetConnectionString("Default")));
 builder.Services.AddSingleton(new TokenService(jwtKey));
 
@@ -100,6 +101,7 @@ api.MapRoles();
 api.MapPartsBills();
 api.MapProducts();
 api.MapNames();
+api.MapAudit();
 
 await DbInit.RunAsync(app.Services, cfg);
 app.Run();

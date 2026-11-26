@@ -15,6 +15,7 @@ export const routes: Routes = [
       { path: 'staff', loadComponent: () => import('./catalog/names').then(m => m.Staff), data: { label: '人员管理', perm: 'staff.write' } },
       { path: 'users', loadComponent: () => import('./identity/users').then(m => m.Users), data: { label: '用户管理', perm: 'user.read' } },
       { path: 'roles', loadComponent: () => import('./identity/roles').then(m => m.Roles), data: { label: '角色管理', perm: 'role.read' } },
+      { path: 'audit', loadComponent: () => import('./identity/audit').then(m => m.Audit), data: { label: '操作日志', perm: 'audit.read' } },
       // No perm: every signed-in user may change their own password.
       { path: 'password', loadComponent: () => import('./identity/password').then(m => m.Password), data: { label: '修改密码' } },
     ],

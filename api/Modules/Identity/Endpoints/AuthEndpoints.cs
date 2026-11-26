@@ -49,21 +49,36 @@ public static class AuthEndpoints
             return new { expiresAt = SignIn(http, env, tokens, user) };
         }).RequireRateLimiting("login");
 
-        // Open to everyone: it only removes the cookie from this browser.
-        g.MapPost("/logout", (HttpContext http, IHostEnvironment env) =>
+        // Open to everyone: it removes the cookie from this browser and, when the request carries a valid
+        // token, revokes that token, so a copy of it stops working too. Other sessions stay signed in.
+        g.MapPost("/logout", async (HttpContext http, IHostEnvironment env, AppDb db) =>
         {
             http.Response.Cookies.Delete(AuthExtensions.TokenCookie, AuthExtensions.TokenCookieOptions(env));
+            if (http.User.TokenId() is { } jti && long.TryParse(http.User.FindFirstValue("exp"), out var exp)
+                && !await db.RevokedTokens.AnyAsync(t => t.Id == jti))
+            {
+                var now = DateTime.UtcNow;
+                await db.RevokedTokens.Where(t => t.ExpiresAt < now).ExecuteDeleteAsync(); // expired tokens are refused anyway
+                db.RevokedTokens.Add(new() { Id = jti, ExpiresAt = DateTimeOffset.FromUnixTimeSeconds(exp).UtcDateTime });
+                await db.SaveChangesAsync();
+            }
             return Results.NoContent();
         });
 
         g.MapGet("/me", async (ClaimsPrincipal principal, AppDb db) =>
         {
             var id = principal.UserId();
+            var jti = principal.TokenId();
             var me = await db.Users.Where(u => u.Id == id && u.IsActive)
-                .Select(u => new { u.Id, u.Username, u.DisplayName, u.TokenVersion, Permissions = u.Roles.Select(r => r.Permissions).ToList() })
+                .Select(u => new
+                {
+                    u.Id, u.Username, u.DisplayName, u.TokenVersion,
+                    Permissions = u.Roles.Select(r => r.Permissions).ToList(),
+                    Revoked = jti != null && db.RevokedTokens.Any(t => t.Id == jti),
+                })
                 .SingleOrDefaultAsync()
                 ?? throw new AppException(401, "ACCOUNT_DISABLED", "您的账号已被停用。");
-            if (me.TokenVersion != principal.TokenVersion()) throw AuthExtensions.TokenExpired();
+            if (me.Revoked || me.TokenVersion != principal.TokenVersion()) throw AuthExtensions.TokenExpired();
             return new { me.Id, me.Username, me.DisplayName, Permissions = me.Permissions.SelectMany(p => p).Distinct() };
         }).RequireAuthorization();
 

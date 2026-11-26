@@ -8,7 +8,7 @@ services:
     environment:
       ConnectionStrings__Default: Host=${DB_HOST:?set DB_HOST in .env};Port=${DB_PORT:-5432};Database=${DB_NAME:?set DB_NAME in .env};Username=${DB_USER:?set DB_USER in .env};Password=${DB_PASSWORD:?set DB_PASSWORD in .env}
       Jwt__Key: ${JWT_KEY:?set JWT_KEY in .env}
-      Seed__AdminPassword: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      Seed__AdminPassword: ${ADMIN_PASSWORD:-} # first start only; remove it from .env afterwards
       # Take the client IP from X-Forwarded-For only on requests from the default network below, where
       # the web container is (it overwrites that header). The API is also on the shared database
       # network: a container there that calls the API directly cannot fake its address.

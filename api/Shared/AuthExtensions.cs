@@ -37,6 +37,9 @@ public static class AuthExtensions
             throw new AppException(403, "PERMISSION_NOT_HELD", $"不能授予或改动您自己没有的权限：{string.Join("、", missing)}");
     }
 
+    /// The token's id; null on tokens from before ids were added (they cannot be revoked one by one, and expire within 8 hours).
+    public static string? TokenId(this ClaimsPrincipal user) => user.FindFirstValue("jti");
+
     public static AppException TokenExpired() => new(401, "TOKEN_EXPIRED", "登录已失效，请重新登录。");
 
     /// Permissions are read from the database on each request, so a role change
@@ -52,11 +55,18 @@ public static class AuthExtensions
         builder.RequireAuthorization().AddEndpointFilter(async (ctx, next) =>
         {
             var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDb>();
-            var userId = ctx.HttpContext.User.UserId();
+            var principal = ctx.HttpContext.User;
+            var userId = principal.UserId();
+            var jti = principal.TokenId();
             var user = await db.Users.Where(u => u.Id == userId && u.IsActive)
-                .Select(u => new { u.TokenVersion, Allowed = code == null || u.Roles.Any(r => r.Permissions.Contains(code)) })
+                .Select(u => new
+                {
+                    u.TokenVersion,
+                    Allowed = code == null || u.Roles.Any(r => r.Permissions.Contains(code)),
+                    Revoked = jti != null && db.RevokedTokens.Any(t => t.Id == jti),
+                })
                 .SingleOrDefaultAsync();
-            if (user is not null && user.TokenVersion != ctx.HttpContext.User.TokenVersion()) throw TokenExpired();
+            if (user is not null && (user.Revoked || user.TokenVersion != principal.TokenVersion())) throw TokenExpired();
             if (user is not { Allowed: true }) throw new AppException(403, "FORBIDDEN", "您没有权限执行此操作。");
             return await next(ctx);
         });

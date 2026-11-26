@@ -193,4 +193,21 @@ check "old session ended"         401 TOKEN_EXPIRED       GET /auth/me "$MGR"
 check "new cookie works"          200 - GET /auth/me "$NEW_MGR"
 check "login with new password"   200 - POST /auth/login "" "$(login_json "mgr$S" Mgr@123456)"
 
+# Signing out revokes that token only: a copy of it stops working, another session of the same user does not.
+check "second manager session"    200 - POST /auth/login "" "$(login_json "mgr$S" Mgr@123456)"
+OTHER_MGR=$(login_token)
+check "logout revokes the token"  204 - POST /auth/logout "$NEW_MGR"
+check "revoked token, me"         401 TOKEN_EXPIRED       GET /auth/me "$NEW_MGR"
+check "revoked token, api"        401 TOKEN_EXPIRED       GET /users "$NEW_MGR"
+check "logout twice"              204 - POST /auth/logout "$NEW_MGR"
+check "other session still works" 200 - GET /auth/me "$OTHER_MGR"
+
+# The audit log records who changed what; secrets never appear in it.
+check "audit of the bill"         200 - GET "/audit?entity=PartsBill&entityId=$BILL_ID" "$ADMIN"
+jq -e '.total >= 2 and any(.items[]; .action == "Added" and .user != null) and any(.items[]; .action == "Modified")' <<<"$BODY" >/dev/null || { echo "FAIL: bill audit: $BODY"; exit 1; }
+check "audit of a password reset" 200 - GET "/audit?entity=User&entityId=$LOCK_ID" "$ADMIN"
+grep -q 'AQAAAA' <<<"$BODY" && { echo "FAIL: password hash in the audit log"; exit 1; }
+jq -e 'any(.items[]; .changes | contains("***"))' <<<"$BODY" >/dev/null || { echo "FAIL: password change not recorded: $BODY"; exit 1; }
+check "manager may not read audit" 403 FORBIDDEN          GET /audit "$OTHER_MGR"
+
 echo "ALL PASSED"
