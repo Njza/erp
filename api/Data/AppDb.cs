@@ -21,6 +21,16 @@ public class Role
     public List<User> Users { get; set; } = [];
 }
 
+/// A part that can be picked on a bill. Bills copy the name and unit as text, so a product
+/// can be renamed or deleted without changing old bills. No price: prices are typed per bill.
+public class Product
+{
+    public int Id { get; set; }
+    public required string Name { get; set; } // unique
+    public required string Unit { get; set; } // 台, 个, 条, ...
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 /// A printed "更换配件清单". The company header is not stored: it comes from the print settings.
 public class PartsBill
 {
@@ -56,11 +66,13 @@ public class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
     public DbSet<User> Users => Set<User>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<PartsBill> PartsBills => Set<PartsBill>();
+    public DbSet<Product> Products => Set<Product>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<User>().HasIndex(u => u.Username).IsUnique();
         b.Entity<Role>().HasIndex(r => r.Name).IsUnique();
+        b.Entity<Product>().HasIndex(p => p.Name).IsUnique();
         b.Entity<PartsBill>(e =>
         {
             e.HasIndex(x => x.No).IsUnique();

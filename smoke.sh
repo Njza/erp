@@ -74,9 +74,22 @@ check "bill without number"       400 HTTP_400            POST /parts-bills "$AD
 check "missing bill"              404 NOT_FOUND           GET /parts-bills/999999 "$ADMIN"
 check "viewer may not read bills" 403 FORBIDDEN           GET /parts-bills "$VIEWER"
 
+# Products: any signed-in user reads them, only product.write changes them.
+check "create product"            200 - POST /products "$ADMIN" "{\"name\":\"part$S\",\"unit\":\"pc\"}"
+PRODUCT_ID=$(jq -r .id <<<"$BODY")
+check "duplicate product name"    409 DUPLICATE           POST /products "$ADMIN" "{\"name\":\"part$S\",\"unit\":\"pc\"}"
+check "product without unit"      400 HTTP_400            POST /products "$ADMIN" "{\"name\":\"x$S\",\"unit\":\"\"}"
+check "update product"            204 - PUT "/products/$PRODUCT_ID" "$ADMIN" "{\"name\":\"part$S\",\"unit\":\"set\"}"
+check "viewer may read products"  200 - GET /products "$VIEWER"
+jq -e --arg n "part$S" 'any(.[]; .name == $n and .unit == "set")' <<<"$BODY" >/dev/null || { echo "FAIL: product not listed"; exit 1; }
+check "viewer may not add products" 403 FORBIDDEN         POST /products "$VIEWER" "{\"name\":\"v$S\",\"unit\":\"pc\"}"
+check "delete product"            204 - DELETE "/products/$PRODUCT_ID" "$ADMIN"
+check "deleted product is gone"   404 NOT_FOUND           DELETE "/products/$PRODUCT_ID" "$ADMIN"
+
 # Disabling a user must take effect on the token they already hold.
 check "disable viewer"            204 - PUT "/users/$USER_ID" "$ADMIN" "{\"displayName\":\"Viewer\",\"isActive\":false,\"roleIds\":[$ROLE]}"
 check "disabled user, old token"  403 FORBIDDEN           GET /users "$VIEWER"
+check "disabled user, products"   403 FORBIDDEN           GET /products "$VIEWER"
 check "disabled user cannot log in" 401 INVALID_CREDENTIALS POST /auth/login "" "$(login_json "viewer$S" Viewer@12345)"
 
 echo "ALL PASSED"

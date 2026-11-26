@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../core/auth';
 import { NotifyService } from '../core/notify';
+import type { Product } from './products';
 import { rmbUpper } from '../core/rmb';
 
 // Continuous paper for dot-matrix printers is 9.5in (241mm) wide; the height is one fold.
@@ -106,7 +107,8 @@ const num = (n: number) => String(+n.toFixed(2));
           @for (r of formRows(); track $index; let i = $index) {
             <tr>
               <td>{{ i + 1 }}</td>
-              <td><input [name]="'name' + i" [(ngModel)]="r.name" [attr.aria-label]="'第' + (i + 1) + '行配件名称'"></td>
+              <td><input [name]="'name' + i" [(ngModel)]="r.name" (ngModelChange)="pickProduct(r, $event)" list="product-list"
+                         autocomplete="off" [attr.aria-label]="'第' + (i + 1) + '行配件名称'"></td>
               <td><input [name]="'unit' + i" [(ngModel)]="r.unit" [attr.aria-label]="'第' + (i + 1) + '行单位（梯号）'"></td>
               <td><input type="number" min="0" step="any" [name]="'qty' + i" [(ngModel)]="r.qty" [attr.aria-label]="'第' + (i + 1) + '行数量'"></td>
               <td><input [name]="'qtyUnit' + i" [(ngModel)]="r.qtyUnit" placeholder="台" [attr.aria-label]="'第' + (i + 1) + '行数量单位'"></td>
@@ -116,7 +118,11 @@ const num = (n: number) => String(+n.toFixed(2));
           }
         </tbody>
       </table>
-      <p class="muted">只填名称的行会原样打印，可用来写配件编号。数量和单价都填了才计算金额。</p>
+      <!-- The browser's own suggestion list: it filters as the user types, with the unit shown beside each name. -->
+      <datalist id="product-list">
+        @for (p of products(); track p.id) { <option [value]="p.name">{{ p.unit }}</option> }
+      </datalist>
+      <p class="muted">配件名称会按产品库给出提示，选中后自动带出单位；也可以直接输入产品库里没有的名称。只填名称的行会原样打印，可用来写配件编号。数量和单价都填了才计算金额。</p>
 
       <details>
         <summary>打印设置（公司抬头、纸张、位置校准）</summary>
@@ -264,6 +270,8 @@ export class PartsBill {
   settings = this.loadSettings();
   bill = this.blankBill();
 
+  products = signal<Product[]>([]);
+
   // History dialog state.
   q = '';
   page = 1;
@@ -275,6 +283,7 @@ export class PartsBill {
   constructor() {
     // The browser takes the paper size from @page, which cannot be bound in a template.
     this.suggestNo();
+    this.http.get<Product[]>('/api/products').subscribe(p => this.products.set(p));
     const style = document.createElement('style');
     document.head.appendChild(style);
     effect(onCleanup => {
@@ -291,6 +300,12 @@ export class PartsBill {
     const rows = this.bill.rows;
     const isItem = (r: Row) => r.qty !== null || r.price !== null;
     return isItem(rows[i]) ? rows.slice(0, i + 1).filter(isItem).length : '';
+  }
+
+  /** A name that is exactly a product's name takes that product's unit. */
+  pickProduct(r: Row, name: string) {
+    const product = this.products().find(p => p.name === name);
+    if (product) r.qtyUnit = product.unit;
   }
 
   amount(r: Row) { return r.qty !== null && r.price !== null ? r.qty * r.price : null; }
