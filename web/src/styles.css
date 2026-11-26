@@ -57,3 +57,11 @@ td.actions button + button { margin-left: 6px; }
 .toasts:popover-open { display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
 .toast { text-align: left; border-left: 4px solid var(--accent); box-shadow: 0 4px 14px rgb(0 0 0 / .18); }
 .toast.error { border-left-color: var(--danger); }
+
+/* Printing: only the page content goes to paper. A page marks its screen-only parts with .no-print. */
+@media print {
+  body { background: #fff; }
+  .shell { display: block; min-height: 0; }
+  .shell aside, .toasts, .no-print { display: none !important; }
+  .shell main { padding: 0; overflow: visible; }
+}

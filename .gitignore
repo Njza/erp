@@ -1,2 +1,5 @@
 .env
 .DS_Store
+# Source documents with real customer data stay out of the public repository.
+*.doc
+*.docx

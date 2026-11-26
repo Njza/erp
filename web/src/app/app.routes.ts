@@ -9,6 +9,7 @@ export const routes: Routes = [
     path: '', component: Shell, canActivate: [authGuard], canActivateChild: [authGuard],
     children: [
       { path: '', loadComponent: () => import('./pages/home').then(m => m.Home), data: { label: '首页' } },
+      { path: 'parts-bill', loadComponent: () => import('./pages/parts-bill').then(m => m.PartsBill), data: { label: '配件清单打印' } },
       { path: 'users', loadComponent: () => import('./pages/users').then(m => m.Users), data: { label: '用户管理', perm: 'user.read' } },
       { path: 'roles', loadComponent: () => import('./pages/roles').then(m => m.Roles), data: { label: '角色管理', perm: 'role.read' } },
     ],
