@@ -71,6 +71,7 @@ var api = app.MapGroup("/api");
 api.MapAuth();
 api.MapUsers();
 api.MapRoles();
+api.MapPartsBills();
 
 await DbInit.RunAsync(app.Services, cfg);
 app.Run();

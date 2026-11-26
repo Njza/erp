@@ -1,5 +1,9 @@
-import { Component, effect, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { ChangeDetectorRef, Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
+import { AuthService } from '../core/auth';
+import { NotifyService } from '../core/notify';
 import { rmbUpper } from '../core/rmb';
 
 // Continuous paper for dot-matrix printers is 9.5in (241mm) wide; the height is one fold.
@@ -22,6 +26,14 @@ const DEFAULT_SETTINGS = {
 };
 
 interface Row { name: string; unit: string; qty: number | null; qtyUnit: string; price: number | null }
+interface Bill {
+  id: number; no: string; date: string; handler: string; customer: string; picker: string; installer: string; receiver: string;
+  settle: boolean; warranty: boolean; rows: Row[];
+}
+interface BillSummary { id: number; no: string; date: string; customer: string; handler: string; total: number }
+
+const isEmpty = (r: Row) => !r.name && !r.unit && r.qty === null && r.price === null;
+const blankRow = (): Row => ({ name: '', unit: '', qty: null, qtyUnit: '台', price: null });
 
 /** 650 -> "650", 650.5 -> "650.5", 0.125 -> "0.13" */
 const num = (n: number) => String(+n.toFixed(2));
@@ -31,16 +43,50 @@ const num = (n: number) => String(+n.toFixed(2));
   template: `
     <div class="no-print">
       <header class="page-head">
-        <h1>更换配件清单</h1>
+        <h1>更换配件清单 <small class="muted">{{ bill.id ? '已保存' : '未保存' }}</small></h1>
         <div class="buttons">
-          <button (click)="reset()">清空</button>
-          <button class="primary" [disabled]="!!problem()" (click)="print()">打印</button>
+          <button (click)="openHistory()">历史记录</button>
+          @if (canWrite) {
+            <button (click)="newBill()">新建</button>
+            <button [disabled]="busy()" (click)="save()">保存</button>
+            <button class="primary" [disabled]="busy() || !!problem()" (click)="saveAndPrint()">保存并打印</button>
+          } @else {
+            <button class="primary" [disabled]="!bill.id || !!problem()" (click)="print()">打印</button>
+          }
         </div>
       </header>
       @if (problem(); as p) { <p class="problem" role="alert">{{ p }}</p> }
 
+      <dialog #history class="history">
+        <h2>历史记录</h2>
+        <form class="search" (ngSubmit)="loadHistory(1)">
+          <input name="q" [(ngModel)]="q" placeholder="单据编号或使用单位" aria-label="搜索单据编号或使用单位">
+          <button>搜索</button>
+        </form>
+        <table>
+          <thead><tr><th>单据编号</th><th>日期</th><th>使用单位</th><th>经手人</th><th class="r">合计</th><th></th></tr></thead>
+          <tbody>
+            @for (b of list().items; track b.id) {
+              <tr>
+                <td>{{ b.no }}</td><td>{{ b.date }}</td><td>{{ b.customer }}</td><td>{{ b.handler }}</td>
+                <td class="r">{{ numText(b.total) }}</td>
+                <td class="actions"><button (click)="open(b.id)">打开</button></td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6" class="muted">没有单据。</td></tr>
+            }
+          </tbody>
+        </table>
+        <menu>
+          <span class="muted">共 {{ list().total }} 张，第 {{ page }} / {{ pages() }} 页</span>
+          <button type="button" [disabled]="page <= 1" (click)="loadHistory(page - 1)">上一页</button>
+          <button type="button" [disabled]="page >= pages()" (click)="loadHistory(page + 1)">下一页</button>
+          <button type="button" (click)="history.close()">关闭</button>
+        </menu>
+      </dialog>
+
       <div class="fields">
-        <label>录单日期 <input type="date" name="date" [(ngModel)]="bill.date"></label>
+        <label>录单日期 <input type="date" name="date" [(ngModel)]="bill.date" (change)="suggestNo()"></label>
         <label>单据编号 <input name="no" [(ngModel)]="bill.no"></label>
         <label>经手人 <input name="handler" [(ngModel)]="bill.handler"></label>
         <label>使用单位 <input name="customer" [(ngModel)]="bill.customer"></label>
@@ -151,7 +197,14 @@ const num = (n: number) => String(+n.toFixed(2));
     </div>
   `,
   styles: `
-    .buttons { display: flex; gap: 8px; }
+    .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+    h1 small { font-size: 12px; font-weight: normal; margin-left: 8px; }
+    dialog.history { width: min(100%, 820px); }
+    .search { display: flex; gap: 8px; margin-bottom: 12px; }
+    .search input { flex: 1; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+    .history .r { text-align: right; }
+    .history menu { align-items: center; }
+    .history menu span { margin-right: auto; }
     .problem { color: var(--danger); }
     .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 16px; }
     .fields fieldset { grid-column: span 2; }
@@ -199,13 +252,29 @@ export class PartsBill {
   paperKeys = Object.keys(PAPERS) as PaperKey[];
   numText = num;
 
+  private http = inject(HttpClient);
+  private notify = inject(NotifyService);
+  // The form binds to plain objects, not signals. The app is zoneless, so after changing them
+  // in an async callback the view must be told to refresh.
+  private view = inject(ChangeDetectorRef);
+  private historyDialog = viewChild.required<ElementRef<HTMLDialogElement>>('history');
+
+  canWrite = inject(AuthService).has('bill.write');
+  busy = signal(false);
   settings = this.loadSettings();
   bill = this.blankBill();
+
+  // History dialog state.
+  q = '';
+  page = 1;
+  list = signal<{ items: BillSummary[]; total: number; pageSize: number }>({ items: [], total: 0, pageSize: 20 });
+  pages() { return Math.max(1, Math.ceil(this.list().total / this.list().pageSize)); }
   // A signal copy of settings.paper, so the @page effect below re-runs when the paper changes.
   private paperKey = signal(this.settings.paper);
 
   constructor() {
     // The browser takes the paper size from @page, which cannot be bound in a template.
+    this.suggestNo();
     const style = document.createElement('style');
     document.head.appendChild(style);
     effect(onCleanup => {
@@ -239,14 +308,74 @@ export class PartsBill {
     if (!this.settings.company) return '请先在“打印设置”里填写公司名称。';
     if (this.bill.rows.some(r => (r.qty ?? 0) < 0 || (r.price ?? 0) < 0)) return '数量和单价不能是负数。';
     // shortcut: one sheet per bill, no continuation page; add paging if bills outgrow one sheet.
-    const hidden = this.bill.rows.slice(this.paper().rows).some(r => r.name || r.unit || r.qty !== null || r.price !== null);
+    const hidden = this.bill.rows.slice(this.paper().rows).some(r => !isEmpty(r));
     return hidden ? `当前纸张只能打印 ${this.paper().rows} 行，后面还有已填写的行。请换用整张纸或删掉多余的行。` : '';
   }
 
   print() { window.print(); }
 
-  reset() {
-    if (confirm('清空当前填写的内容？')) this.bill = this.blankBill();
+  /** Saves the bill (create or update). Returns false when the server refused it; the interceptor shows why. */
+  async save(): Promise<boolean> {
+    const { id, rows, ...fields } = this.bill;
+    let used = rows.length; // keep blank lines between items, drop the trailing ones
+    while (used > 0 && isEmpty(rows[used - 1])) used--;
+    const body = { ...fields, rows: rows.slice(0, used) };
+    this.busy.set(true);
+    try {
+      if (id) await firstValueFrom(this.http.put(`/api/parts-bills/${id}`, body));
+      else this.bill.id = (await firstValueFrom(this.http.post<{ id: number }>('/api/parts-bills', body))).id;
+    } catch { return false; }
+    finally { this.busy.set(false); }
+    this.view.markForCheck();
+    this.notify.success('单据已保存。');
+    return true;
+  }
+
+  /** Printing always saves first, so every printed bill is in the history. */
+  async saveAndPrint() {
+    if (await this.save()) this.print();
+  }
+
+  newBill() {
+    if (!this.discardOk()) return;
+    this.bill = this.blankBill();
+    this.suggestNo();
+  }
+
+  /** Asks the server for the next free number of the bill's date. Only for a bill that is not saved yet. */
+  suggestNo() {
+    if (this.bill.id || !this.canWrite || !this.bill.date) return;
+    const bill = this.bill;
+    this.http.get<{ no: string }>('/api/parts-bills/next-no', { params: { date: bill.date } })
+      .subscribe({ next: r => { bill.no = r.no; this.view.markForCheck(); }, error: () => { /* keep the local guess; the interceptor showed the error */ } });
+  }
+
+  openHistory() {
+    this.historyDialog().nativeElement.showModal();
+    this.loadHistory(1);
+  }
+
+  loadHistory(page: number) {
+    this.page = page;
+    this.http.get<{ items: BillSummary[]; total: number; pageSize: number }>('/api/parts-bills', { params: { q: this.q, page } })
+      .subscribe(r => this.list.set(r));
+  }
+
+  async open(id: number) {
+    if (!this.discardOk()) return;
+    let saved: Bill;
+    try { saved = await firstValueFrom(this.http.get<Bill>(`/api/parts-bills/${id}`)); } catch { return; }
+    // The form always has MAX_ROWS lines; the server stores only the used ones.
+    const rows = [...saved.rows, ...Array.from({ length: MAX_ROWS - saved.rows.length }, blankRow)];
+    this.bill = { ...this.blankBill(), ...saved, rows };
+    this.view.markForCheck();
+    this.historyDialog().nativeElement.close();
+  }
+
+  /** A bill that was never saved and has content would be lost: ask first. */
+  private discardOk() {
+    const unsaved = !this.bill.id && (this.bill.customer || this.bill.rows.some(r => !isEmpty(r)));
+    return !unsaved || confirm('当前单据还没有保存，确定放弃吗？');
   }
 
   saveSettings() {
@@ -259,16 +388,17 @@ export class PartsBill {
     catch { return { ...DEFAULT_SETTINGS }; }
   }
 
-  private blankBill() {
+  private blankBill(): Bill {
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     const ymd = [now.getFullYear(), pad(now.getMonth() + 1), pad(now.getDate())];
     return {
+      id: 0, // 0 = not saved yet
       date: ymd.join('-'),
-      no: ymd.join('') + '01', // date + the day's sequence; the sequence is typed by hand
+      no: ymd.join('') + '01', // a local guess; suggestNo() replaces it with the server's next free number
       handler: '', customer: '', picker: '', installer: '', receiver: '',
       settle: true, warranty: false,
-      rows: Array.from({ length: MAX_ROWS }, (): Row => ({ name: '', unit: '', qty: null, qtyUnit: '台', price: null })),
+      rows: Array.from({ length: MAX_ROWS }, blankRow),
     };
   }
 }

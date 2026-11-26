@@ -14,6 +14,8 @@ const PERM_LABELS: Record<string, string> = {
   'user.write': '管理用户',
   'role.read': '查看角色',
   'role.write': '管理角色',
+  'bill.read': '查看配件清单',
+  'bill.write': '填写配件清单',
 };
 
 @Component({

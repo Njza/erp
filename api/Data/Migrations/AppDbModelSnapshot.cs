@@ -22,6 +22,68 @@ namespace Erp.Api.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Erp.Api.PartsBill", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreatedById")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Customer")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Handler")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Installer")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("No")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Picker")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Receiver")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("Settle")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Warranty")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("No")
+                        .IsUnique();
+
+                    b.ToTable("PartsBills");
+                });
+
             modelBuilder.Entity("Erp.Api.Role", b =>
                 {
                     b.Property<int>("Id")
@@ -93,6 +155,43 @@ namespace Erp.Api.Data.Migrations
                     b.HasIndex("UsersId");
 
                     b.ToTable("RoleUser");
+                });
+
+            modelBuilder.Entity("Erp.Api.PartsBill", b =>
+                {
+                    b.OwnsMany("Erp.Api.PartsBillRow", "Rows", b1 =>
+                        {
+                            b1.Property<int>("PartsBillId");
+
+                            b1.Property<int>("__synthesizedOrdinal")
+                                .ValueGeneratedOnAdd();
+
+                            b1.Property<string>("Name")
+                                .IsRequired();
+
+                            b1.Property<decimal?>("Price");
+
+                            b1.Property<decimal?>("Qty");
+
+                            b1.Property<string>("QtyUnit")
+                                .IsRequired();
+
+                            b1.Property<string>("Unit")
+                                .IsRequired();
+
+                            b1.HasKey("PartsBillId", "__synthesizedOrdinal");
+
+                            b1.ToTable("PartsBills");
+
+                            b1
+                                .ToJson("Rows")
+                                .HasColumnType("jsonb");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PartsBillId");
+                        });
+
+                    b.Navigation("Rows");
                 });
 
             modelBuilder.Entity("RoleUser", b =>
