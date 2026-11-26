@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../core/auth';
 import { NotifyService } from '../core/notify';
+import type { Customer } from './customers';
 import type { Product } from './products';
 import { rmbUpper } from '../core/rmb';
 
@@ -90,7 +91,7 @@ const num = (n: number) => String(+n.toFixed(2));
         <label>录单日期 <input type="date" name="date" [(ngModel)]="bill.date" (change)="suggestNo()"></label>
         <label>单据编号 <input name="no" [(ngModel)]="bill.no"></label>
         <label>经手人 <input name="handler" [(ngModel)]="bill.handler"></label>
-        <label>使用单位 <input name="customer" [(ngModel)]="bill.customer"></label>
+        <label>使用单位 <input name="customer" [(ngModel)]="bill.customer" list="customer-list" autocomplete="off"></label>
         <label>出仓领件人 <input name="picker" [(ngModel)]="bill.picker"></label>
         <label>维修安装员 <input name="installer" [(ngModel)]="bill.installer"></label>
         <label>使用单位收货人 <input name="receiver" [(ngModel)]="bill.receiver"></label>
@@ -109,7 +110,8 @@ const num = (n: number) => String(+n.toFixed(2));
               <td>{{ i + 1 }}</td>
               <td><input [name]="'name' + i" [(ngModel)]="r.name" (ngModelChange)="pickProduct(r, $event)" list="product-list"
                          autocomplete="off" [attr.aria-label]="'第' + (i + 1) + '行配件名称'"></td>
-              <td><input [name]="'unit' + i" [(ngModel)]="r.unit" [attr.aria-label]="'第' + (i + 1) + '行单位（梯号）'"></td>
+              <td><input [name]="'unit' + i" [(ngModel)]="r.unit" list="customer-list" autocomplete="off"
+                         [attr.aria-label]="'第' + (i + 1) + '行单位（梯号）'"></td>
               <td><input type="number" min="0" step="any" [name]="'qty' + i" [(ngModel)]="r.qty" [attr.aria-label]="'第' + (i + 1) + '行数量'"></td>
               <td><input [name]="'qtyUnit' + i" [(ngModel)]="r.qtyUnit" placeholder="台" [attr.aria-label]="'第' + (i + 1) + '行数量单位'"></td>
               <td><input type="number" min="0" step="any" [name]="'price' + i" [(ngModel)]="r.price" [attr.aria-label]="'第' + (i + 1) + '行单价'"></td>
@@ -122,7 +124,10 @@ const num = (n: number) => String(+n.toFixed(2));
       <datalist id="product-list">
         @for (p of products(); track p.id) { <option [value]="p.name">{{ p.unit }}</option> }
       </datalist>
-      <p class="muted">配件名称会按产品库给出提示，选中后自动带出单位；也可以直接输入产品库里没有的名称。只填名称的行会原样打印，可用来写配件编号。数量和单价都填了才计算金额。</p>
+      <datalist id="customer-list">
+        @for (c of customers(); track c.id) { <option [value]="c.name"></option> }
+      </datalist>
+      <p class="muted">“使用单位”和每行的“单位（梯号）”会按客户库给出提示。配件名称会按产品库给出提示，选中后自动带出单位；也可以直接输入库里没有的名称。只填名称的行会原样打印，可用来写配件编号。数量和单价都填了才计算金额。</p>
 
       <details>
         <summary>打印设置（公司抬头、纸张、位置校准）</summary>
@@ -271,6 +276,7 @@ export class PartsBill {
   bill = this.blankBill();
 
   products = signal<Product[]>([]);
+  customers = signal<Customer[]>([]);
 
   // History dialog state.
   q = '';
@@ -284,6 +290,7 @@ export class PartsBill {
     // The browser takes the paper size from @page, which cannot be bound in a template.
     this.suggestNo();
     this.http.get<Product[]>('/api/products').subscribe(p => this.products.set(p));
+    this.http.get<Customer[]>('/api/customers').subscribe(c => this.customers.set(c));
     const style = document.createElement('style');
     document.head.appendChild(style);
     effect(onCleanup => {

@@ -17,6 +17,7 @@ const PERM_LABELS: Record<string, string> = {
   'bill.read': '查看配件清单',
   'bill.write': '填写配件清单',
   'product.write': '管理产品',
+  'customer.write': '管理客户',
 };
 
 @Component({

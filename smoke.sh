@@ -86,6 +86,17 @@ check "viewer may not add products" 403 FORBIDDEN         POST /products "$VIEWE
 check "delete product"            204 - DELETE "/products/$PRODUCT_ID" "$ADMIN"
 check "deleted product is gone"   404 NOT_FOUND           DELETE "/products/$PRODUCT_ID" "$ADMIN"
 
+# Customers: same rules as products.
+check "create customer"           200 - POST /customers "$ADMIN" "{\"name\":\"cust$S\"}"
+CUSTOMER_ID=$(jq -r .id <<<"$BODY")
+check "duplicate customer name"   409 DUPLICATE           POST /customers "$ADMIN" "{\"name\":\"cust$S\"}"
+check "customer without name"     400 HTTP_400            POST /customers "$ADMIN" "{\"name\":\"\"}"
+check "update customer"           204 - PUT "/customers/$CUSTOMER_ID" "$ADMIN" "{\"name\":\"cust$S-b\"}"
+check "viewer may read customers" 200 - GET /customers "$VIEWER"
+jq -e --arg n "cust$S-b" 'any(.[]; .name == $n)' <<<"$BODY" >/dev/null || { echo "FAIL: customer not listed"; exit 1; }
+check "viewer may not add customers" 403 FORBIDDEN        POST /customers "$VIEWER" "{\"name\":\"v$S\"}"
+check "delete customer"           204 - DELETE "/customers/$CUSTOMER_ID" "$ADMIN"
+
 # Disabling a user must take effect on the token they already hold.
 check "disable viewer"            204 - PUT "/users/$USER_ID" "$ADMIN" "{\"displayName\":\"Viewer\",\"isActive\":false,\"roleIds\":[$ROLE]}"
 check "disabled user, old token"  403 FORBIDDEN           GET /users "$VIEWER"

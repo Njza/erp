@@ -16,6 +16,7 @@ public static class Perm
     public const string BillRead = "bill.read";
     public const string BillWrite = "bill.write";
     public const string ProductWrite = "product.write";
+    public const string CustomerWrite = "customer.write";
 
     public static readonly string[] All =
         [.. typeof(Perm).GetFields().Where(f => f.IsLiteral).Select(f => (string)f.GetRawConstantValue()!)];

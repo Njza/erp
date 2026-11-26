@@ -31,6 +31,15 @@ public class Product
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
+/// A customer (使用单位) that can be picked on a bill. Bills copy the name as text,
+/// so a customer can be renamed or deleted without changing old bills.
+public class Customer
+{
+    public int Id { get; set; }
+    public required string Name { get; set; } // unique
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 /// A printed "更换配件清单". The company header is not stored: it comes from the print settings.
 public class PartsBill
 {
@@ -67,12 +76,14 @@ public class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<PartsBill> PartsBills => Set<PartsBill>();
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<Customer> Customers => Set<Customer>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<User>().HasIndex(u => u.Username).IsUnique();
         b.Entity<Role>().HasIndex(r => r.Name).IsUnique();
         b.Entity<Product>().HasIndex(p => p.Name).IsUnique();
+        b.Entity<Customer>().HasIndex(c => c.Name).IsUnique();
         b.Entity<PartsBill>(e =>
         {
             e.HasIndex(x => x.No).IsUnique();

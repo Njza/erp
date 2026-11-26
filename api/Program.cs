@@ -73,6 +73,7 @@ api.MapUsers();
 api.MapRoles();
 api.MapPartsBills();
 api.MapProducts();
+api.MapCustomers();
 
 await DbInit.RunAsync(app.Services, cfg);
 app.Run();
