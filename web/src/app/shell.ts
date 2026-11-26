@@ -45,6 +45,12 @@ const AUTO_CHECK_MS = 5 * 60_000;
   styles: `
     .update { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
               margin-bottom: 16px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 6px; background: var(--surface); }
+    /* Top bar on tablets and phones: the account and update controls on one line, the menu on its own line below. */
+    @media (max-width: 900px) {
+      aside { flex-wrap: wrap; }
+      nav { order: 1; flex-basis: 100%; }
+      .me { flex-wrap: wrap; white-space: nowrap; }
+    }
   `,
 })
 export class Shell {
