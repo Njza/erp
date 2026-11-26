@@ -105,7 +105,7 @@ const num = (n: number) => String(+n.toFixed(2));
             </label>
             <label>录单日期 <input enterkeyhint="next" type="date" name="date" [(ngModel)]="bill.date" (change)="suggestNo()"></label>
             <label>单据编号 <input enterkeyhint="next" name="no" [(ngModel)]="bill.no"></label>
-            <label>经手人 <input enterkeyhint="next" name="handler" [(ngModel)]="bill.handler"></label>
+            <label>经手人 <input enterkeyhint="next" name="handler" [(ngModel)]="bill.handler" list="handler-list" autocomplete="off"></label>
           </div>
         </section>
 
@@ -159,6 +159,9 @@ const num = (n: number) => String(+n.toFixed(2));
       <!-- The browser's own suggestion lists: they filter as the user types. -->
       <datalist id="product-list">
         @for (p of products(); track p.id) { <option [value]="p.name">{{ p.unit }}</option> }
+      </datalist>
+      <datalist id="handler-list">
+        @for (h of handlers(); track h) { <option [value]="h"></option> }
       </datalist>
       <datalist id="customer-list">
         @for (c of customers(); track c.id) { <option [value]="c.name"></option> }
@@ -371,6 +374,7 @@ export class PartsBill {
 
   products = signal<Product[]>([]);
   customers = signal<Customer[]>([]);
+  handlers = signal<string[]>([]); // names used on earlier bills
 
   // History dialog state.
   q = '';
@@ -393,6 +397,7 @@ export class PartsBill {
     });
     this.http.get<Product[]>('/api/products').subscribe(p => this.products.set(p));
     this.http.get<Customer[]>('/api/customers').subscribe(c => this.customers.set(c));
+    this.http.get<string[]>('/api/parts-bills/handlers').subscribe(h => this.handlers.set(h));
     const style = document.createElement('style');
     document.head.appendChild(style);
     effect(onCleanup => {
@@ -513,6 +518,8 @@ export class PartsBill {
     } catch { return false; }
     finally { this.busy.set(false); }
     this.savedJson = JSON.stringify(this.bill);
+    const handler = this.bill.handler.trim(); // a new name is offered at once, without reloading the list
+    if (handler && !this.handlers().includes(handler)) this.handlers.update(list => [...list, handler].sort());
     try { localStorage.setItem(HANDLER_KEY, this.bill.handler); } catch { /* not remembered in a private window */ }
     this.view.markForCheck();
     this.notify.success('单据已保存。');

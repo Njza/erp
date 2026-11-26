@@ -55,6 +55,11 @@ public static class PartsBillEndpoints
             return new { no = prefix + seq.ToString("00") };
         }).RequirePermission(Perm.BillWrite);
 
+        // Names for the 经手人 suggestions: everyone who appears on a saved bill. No separate list to maintain.
+        g.MapGet("/handlers", async (AppDb db) => await db.PartsBills
+            .Where(b => b.Handler != "").Select(b => b.Handler).Distinct().OrderBy(h => h).ToListAsync())
+            .RequirePermission(Perm.BillRead);
+
         g.MapGet("/{id:int}", async (int id, AppDb db) => ToDto(await Find(db, id)))
             .RequirePermission(Perm.BillRead);
 
