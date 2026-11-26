@@ -41,12 +41,41 @@ Before 1.0, a release with new features or a change people must know about raise
    git push origin v0.2.0
    gh release create v0.2.0 --title v0.2.0 --notes "what changed, for the people who use it"
    ```
-2. **Deploy** (on the server, in the checkout): `./deploy.sh v0.2.0`. It checks out the tag,
-   records it as `APP_VERSION` in `.env`, and rebuilds. The side menu shows the version.
+2. **Deploy**: automatic. Pushing the tag runs `.github/workflows/ci.yml`; when the checks pass,
+   it runs `./deploy.sh v0.2.0` on the server (set up once, see below). By hand, on the server
+   in the checkout: `./deploy.sh v0.2.0`. It checks out the tag, records it as `APP_VERSION`
+   in `.env`, and rebuilds. The side menu shows the version, and open pages offer to reload
+   (检查更新, or every 5 minutes when 自动检查更新 is on).
 3. **Roll back**: `./deploy.sh v0.1.0`. Migrations do not run backwards, so going back past
    a release that changed the database needs a database backup.
 
 The server's checkout sits on a tag (detached HEAD); never edit files there except `.env`.
+
+### Automatic deploy: one-time setup
+
+The workflow logs in with its own SSH key, and the server lets that key run only `deploy.sh`.
+The server user needs passwordless `sudo` for `docker` (deploy.sh uses it).
+
+```bash
+ssh-keygen -t ed25519 -N '' -C erp-ci-deploy -f erp-deploy     # on your machine
+```
+
+On the server, add one line to `~/.ssh/authorized_keys` of the deploy user (the key is the
+content of `erp-deploy.pub`). `restrict` turns off forwarding and the terminal; the forced
+command ignores what the client asks for, except as the tag that deploy.sh checks:
+
+```
+command="/opt/erp/deploy.sh \"$SSH_ORIGINAL_COMMAND\"",restrict ssh-ed25519 AAAA... erp-ci-deploy
+```
+
+Then store three repository secrets and delete the local key files:
+
+```bash
+gh secret set DEPLOY_SSH_KEY < erp-deploy
+gh secret set DEPLOY_KNOWN_HOSTS --body "$(ssh-keyscan -p 22 <server-ip>)"
+gh secret set DEPLOY_TARGET --body "ssh://<user>@<server-ip>:22"
+rm erp-deploy erp-deploy.pub
+```
 
 ## Run for development
 

@@ -1,0 +1,41 @@
+# Checks every push and pull request. A release tag (vX.Y.Z) that passes is deployed:
+# the runner SSHes to the server, where the deploy key may only run deploy.sh (see README, "Automatic deploy").
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26 # same as web/Dockerfile
+      - run: npm ci && npm test
+        working-directory: web
+      # The production images are the build check: same SDKs and steps as the server uses.
+      - run: docker build -t erp-api:ci api
+      - run: docker build -t erp-web:ci web
+
+  deploy:
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    concurrency: deploy # one deploy at a time; a newer tag waits for the running one
+    steps:
+      - name: Deploy ${{ github.ref_name }}
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          TARGET: ${{ secrets.DEPLOY_TARGET }} # e.g. ssh://opc@203.0.113.5:22
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The server's forced command runs deploy.sh with this tag; deploy.sh rejects anything else.
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$TARGET" "$GITHUB_REF_NAME"

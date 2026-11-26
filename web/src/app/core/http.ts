@@ -1,10 +1,13 @@
-import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
+import { HttpContextToken, HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { ErrorHandler, Injectable, inject } from '@angular/core';
 import { catchError, throwError } from 'rxjs';
 import { AuthService } from './auth';
 import { NotifyService } from './notify';
 
 /** Marks the request as ours (the API ignores the login cookie without this header), and shows every API error as a toast. Pages do not show HTTP errors themselves. */
+/** Set on a background request whose failure the user does not need to hear about. */
+export const SILENT = new HttpContextToken(() => false);
+
 export const apiInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const notify = inject(NotifyService);
@@ -14,7 +17,7 @@ export const apiInterceptor: HttpInterceptorFn = (req, next) => {
     if (e.status === 401 && !req.url.endsWith('/auth/login')) {
       auth.logout();
       notify.error('登录已失效，请重新登录。');
-    } else {
+    } else if (!req.context.get(SILENT)) {
       notify.error(messageOf(e));
     }
     return throwError(() => e);
