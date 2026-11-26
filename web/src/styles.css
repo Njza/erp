@@ -17,7 +17,7 @@ h1 { font-size: 20px; margin: 0 0 16px; }
 h2 { font-size: 16px; margin: 0 0 12px; }
 .muted { color: var(--muted); }
 
-button, input { font: inherit; color: inherit; }
+button, input, select { font: inherit; color: inherit; }
 button { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 button:disabled { opacity: .6; cursor: default; }
@@ -41,10 +41,6 @@ dialog::backdrop { background: rgb(0 0 0 / .4); }
 .shell nav a.active { background: var(--bg); color: var(--accent); font-weight: 600; }
 .shell .me { display: flex; flex-direction: column; gap: 8px; color: var(--muted); }
 .shell main { padding: 24px; min-width: 0; } /* no overflow here: it would stop position: sticky inside pages */
-@media (max-width: 640px) {
-  .shell { grid-template-columns: 1fr; }
-  .shell aside { border-right: 0; border-bottom: 1px solid var(--border); }
-}
 
 .page-head { display: flex; justify-content: space-between; align-items: start; }
 table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); }
@@ -58,6 +54,42 @@ td.actions button + button { margin-left: 6px; }
 .toasts:popover-open { display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
 .toast { text-align: left; border-left: 4px solid var(--accent); box-shadow: 0 4px 14px rgb(0 0 0 / .18); }
 .toast.error { border-left-color: var(--danger); }
+
+/* ---- Tablets and phones ---- */
+
+/* Fingers need a larger target than a mouse pointer. */
+@media (pointer: coarse) {
+  button, select, input:not([type=checkbox]) { min-height: 44px; }
+  input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; }
+  label.check { padding: 6px 0; }
+}
+
+/* Tablet in portrait, and smaller: the side menu becomes a bar across the top. */
+@media (max-width: 900px) {
+  /* iOS zooms the whole page when a focused field has text smaller than 16px. */
+  button, input, select { font-size: 16px; }
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .shell aside { flex-direction: row; align-items: center; gap: 12px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .shell nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .shell nav a { padding: 9px 12px; white-space: nowrap; }
+  .shell .me { flex-direction: row; align-items: center; }
+  .shell .me span { display: none; } /* the name gives its place to the menu */
+  .shell .me button { white-space: nowrap; }
+  .shell main { padding: 16px; }
+}
+
+/* Phone. */
+@media (max-width: 640px) {
+  .shell main { padding: 12px; }
+  .shell .brand { display: none; }
+  .page-head { flex-wrap: wrap; gap: 8px; align-items: center; }
+  dialog { padding: 16px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  th, td { padding: 9px 8px; }
+  /* A wide list scrolls sideways in its own box; the page itself never scrolls sideways. */
+  table.scroll { display: block; overflow-x: auto; white-space: nowrap; }
+  /* Pages may pin their actions to the bottom edge, so messages go to the top. */
+  .toasts { inset: 12px 12px auto 12px; max-width: none; }
+}
 
 /* Printing: only the page content goes to paper. A page marks its screen-only parts with .no-print. */
 @media print {

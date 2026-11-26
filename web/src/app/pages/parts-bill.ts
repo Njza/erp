@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { ChangeDetectorRef, Component, ElementRef, afterNextRender, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, ElementRef, afterNextRender, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../core/auth';
@@ -73,7 +73,7 @@ const num = (n: number) => String(+n.toFixed(2));
           <input name="q" [(ngModel)]="q" placeholder="单据编号或使用单位" aria-label="搜索单据编号或使用单位">
           <button>搜索</button>
         </form>
-        <table>
+        <table class="scroll">
           <thead><tr><th>单据编号</th><th>日期</th><th>使用单位</th><th>经手人</th><th class="r">合计</th><th></th></tr></thead>
           <tbody>
             @for (b of list().items; track b.id) {
@@ -101,11 +101,11 @@ const num = (n: number) => String(+n.toFixed(2));
           <h2>1. 单据信息</h2>
           <div class="fields">
             <label class="wide">使用单位
-              <input #first name="customer" [(ngModel)]="bill.customer" list="customer-list" autocomplete="off" placeholder="输入几个字，从客户库里选">
+              <input enterkeyhint="next" #first name="customer" [(ngModel)]="bill.customer" list="customer-list" autocomplete="off" placeholder="输入几个字，从客户库里选">
             </label>
-            <label>录单日期 <input type="date" name="date" [(ngModel)]="bill.date" (change)="suggestNo()"></label>
-            <label>单据编号 <input name="no" [(ngModel)]="bill.no"></label>
-            <label>经手人 <input name="handler" [(ngModel)]="bill.handler"></label>
+            <label>录单日期 <input enterkeyhint="next" type="date" name="date" [(ngModel)]="bill.date" (change)="suggestNo()"></label>
+            <label>单据编号 <input enterkeyhint="next" name="no" [(ngModel)]="bill.no"></label>
+            <label>经手人 <input enterkeyhint="next" name="handler" [(ngModel)]="bill.handler"></label>
           </div>
         </section>
 
@@ -115,17 +115,17 @@ const num = (n: number) => String(+n.toFixed(2));
             <thead><tr><th>序号</th><th>配件名称</th><th>单位（梯号）</th><th>数量</th><th>单位</th><th>单价（元）</th><th>金额</th><th></th></tr></thead>
             <tbody>
               @for (r of formRows(); track $index; let i = $index) {
-                <tr>
-                  <td>{{ i + 1 }}</td>
-                  <td><input [name]="'name' + i" [(ngModel)]="r.name" (ngModelChange)="pickProduct(r, $event)" list="product-list"
+                <tr [class.spare]="i > usedRows()">
+                  <td class="no">{{ i + 1 }}</td>
+                  <td data-label="配件名称"><input enterkeyhint="next" [name]="'name' + i" [(ngModel)]="r.name" (ngModelChange)="pickProduct(r, $event)" list="product-list"
                              autocomplete="off" [attr.aria-label]="'第' + (i + 1) + '行配件名称'"></td>
-                  <td><input [name]="'unit' + i" [(ngModel)]="r.unit" list="customer-list" autocomplete="off"
+                  <td data-label="单位（梯号）"><input enterkeyhint="next" [name]="'unit' + i" [(ngModel)]="r.unit" list="customer-list" autocomplete="off"
                              [attr.aria-label]="'第' + (i + 1) + '行单位（梯号）'"></td>
-                  <td><input type="number" min="0" step="any" [name]="'qty' + i" [(ngModel)]="r.qty" [attr.aria-label]="'第' + (i + 1) + '行数量'"></td>
-                  <td><input [name]="'qtyUnit' + i" [(ngModel)]="r.qtyUnit" [attr.aria-label]="'第' + (i + 1) + '行数量单位'"></td>
-                  <td><input type="number" min="0" step="any" [name]="'price' + i" [(ngModel)]="r.price" [attr.aria-label]="'第' + (i + 1) + '行单价'"></td>
-                  <td class="amount">{{ amountText(r) }}</td>
-                  <td>
+                  <td data-label="数量"><input enterkeyhint="next" type="number" min="0" step="any" [name]="'qty' + i" [(ngModel)]="r.qty" [attr.aria-label]="'第' + (i + 1) + '行数量'"></td>
+                  <td data-label="单位"><input enterkeyhint="next" [name]="'qtyUnit' + i" [(ngModel)]="r.qtyUnit" [attr.aria-label]="'第' + (i + 1) + '行数量单位'"></td>
+                  <td data-label="单价（元）"><input enterkeyhint="next" type="number" min="0" step="any" [name]="'price' + i" [(ngModel)]="r.price" [attr.aria-label]="'第' + (i + 1) + '行单价'"></td>
+                  <td class="amount" data-label="金额">{{ amountText(r) }}</td>
+                  <td class="del">
                     @if (!rowEmpty(r)) {
                       <button type="button" class="x" tabindex="-1" (click)="removeRow(i)" title="删除这一行，下面的行上移"
                               [attr.aria-label]="'删除第' + (i + 1) + '行'">×</button>
@@ -144,9 +144,9 @@ const num = (n: number) => String(+n.toFixed(2));
         <section>
           <h2>3. 签字与说明</h2>
           <div class="fields">
-            <label>维修安装员 <input name="installer" [(ngModel)]="bill.installer"></label>
-            <label>出仓领件人 <input name="picker" [(ngModel)]="bill.picker" placeholder="可留空，打印后手签"></label>
-            <label>使用单位收货人 <input name="receiver" [(ngModel)]="bill.receiver" placeholder="可留空，打印后手签"></label>
+            <label>维修安装员 <input enterkeyhint="next" name="installer" [(ngModel)]="bill.installer"></label>
+            <label>出仓领件人 <input enterkeyhint="next" name="picker" [(ngModel)]="bill.picker" placeholder="可留空，打印后手签"></label>
+            <label>使用单位收货人 <input enterkeyhint="next" name="receiver" [(ngModel)]="bill.receiver" placeholder="可留空，打印后手签"></label>
             <fieldset>
               <legend>附加说明</legend>
               <label class="check"><input type="checkbox" name="settle" [(ngModel)]="bill.settle"> 配件更换完毕即结算</label>
@@ -172,7 +172,7 @@ const num = (n: number) => String(+n.toFixed(2));
           <label>银行账号 <input name="account" [(ngModel)]="settings.account" (change)="saveSettings()"></label>
           <label>户名 <input name="holder" [(ngModel)]="settings.holder" (change)="saveSettings()"></label>
           <label>电话 <input name="phone" [(ngModel)]="settings.phone" (change)="saveSettings()"></label>
-          <label>纸张
+          <label class="wide">纸张
             <select name="paper" [(ngModel)]="settings.paper" (change)="saveSettings()">
               @for (key of paperKeys; track key) { <option [value]="key">{{ papers[key].label }}</option> }
             </select>
@@ -187,12 +187,12 @@ const num = (n: number) => String(+n.toFixed(2));
         <p class="muted">这些设置只保存在这台电脑的浏览器里。打印出来位置不对时，先打一张，用尺量出偏差，再填到偏移里。</p>
       </details>
 
-      <h2>打印预览（实际尺寸）</h2>
+      <h2>打印预览 <small class="muted">{{ zoom() < 1 ? '屏幕较窄，已缩小显示；打印仍是实际尺寸' : '实际尺寸' }}</small></h2>
     </div>
 
-    <div class="preview">
+    <div #preview class="preview">
       <!-- 2mm shorter than the paper: a sheet that is exactly page-high can spill onto a second, blank fold. -->
-      <section class="sheet" [style.height]="'calc(' + paper().height + 'in - 2mm)'"
+      <section class="sheet" [style.zoom]="zoom()" [style.height]="'calc(' + paper().height + 'in - 2mm)'"
                [style.padding-left.mm]="13 + (settings.offsetX || 0)" [style.padding-top.mm]="6 + (settings.offsetY || 0)">
         <h1>{{ settings.company }}更换配件清单</h1>
         <div class="line">
@@ -244,7 +244,7 @@ const num = (n: number) => String(+n.toFixed(2));
   `,
   styles: `
     .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
-    h1 small { font-size: 12px; font-weight: normal; margin-left: 8px; }
+    h1 small, h2 small { font-size: 12px; font-weight: normal; margin-left: 8px; }
     dialog.history { width: min(100%, 820px); }
     .search { display: flex; gap: 8px; margin-bottom: 12px; }
     .search input { flex: 1; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
@@ -266,13 +266,17 @@ const num = (n: number) => String(+n.toFixed(2));
     button.x:hover { color: var(--danger); }
     .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 16px; }
     .fields fieldset { grid-column: span 2; }
-    select { display: block; width: 100%; margin-top: 4px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
+    select { display: block; width: 100%; margin-top: 4px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
     table.entry td { padding: 3px 4px; }
     table.entry input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+    /* Fixed layout: the narrow columns keep their width, and the two name columns share the rest. */
+    table.entry { table-layout: fixed; }
     table.entry th { white-space: nowrap; }
-    table.entry th:nth-child(1) { width: 60px; }
-    table.entry th:nth-child(4), table.entry th:nth-child(5) { width: 90px; }
-    table.entry th:nth-child(6), table.entry th:nth-child(7) { width: 120px; }
+    table.entry th:nth-child(1) { width: 52px; }
+    table.entry th:nth-child(4) { width: 76px; }
+    table.entry th:nth-child(5) { width: 68px; }
+    table.entry th:nth-child(6) { width: 100px; }
+    table.entry th:nth-child(7) { width: 92px; }
     table.entry .amount { text-align: right; }
     details { margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
     summary { cursor: pointer; margin-bottom: 8px; }
@@ -302,7 +306,43 @@ const num = (n: number) => String(+n.toFixed(2));
 
     @media print {
       .preview { overflow: visible; padding: 0; }
-      .sheet { border: 0; }
+      .sheet { border: 0; zoom: 1 !important; } /* the screen preview may be scaled down; paper never is */
+    }
+
+    /* ---- Phone: the actions sit at the bottom edge, and each line of the table becomes a card. ---- */
+    @media (max-width: 700px) {
+      :host { display: block; padding-bottom: calc(72px + env(safe-area-inset-bottom)); } /* room for the fixed buttons */
+      .bar { position: static; margin: 0 0 8px; padding: 0; }
+      .bar .buttons {
+        position: fixed; z-index: 6; inset: auto 0 0 0; flex-wrap: nowrap;
+        padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+        background: var(--surface); border-top: 1px solid var(--border);
+      }
+      .bar .buttons button { flex: 1; padding-inline: 4px; white-space: nowrap; }
+      .steps section { padding: 12px 12px 2px; }
+      .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+
+      table.entry, table.entry tbody, table.entry tfoot { display: block; }
+      table.entry thead, table.entry tr.spare { display: none; } /* only the used lines and one blank line */
+      table.entry tr {
+        display: grid; gap: 6px 8px; padding: 10px 0; border-bottom: 1px solid var(--border);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-areas: "no no del" "name name name" "unit unit unit" "qty qunit price" "amount amount amount";
+      }
+      table.entry td { display: block; padding: 0; border: 0; }
+      table.entry td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 12px; color: var(--muted); }
+      table.entry td.no { grid-area: no; align-self: center; font-weight: 600; }
+      table.entry td.no::before { content: "第 "; } table.entry td.no::after { content: " 行"; }
+      table.entry td.del { grid-area: del; text-align: right; }
+      table.entry td:nth-child(2) { grid-area: name; } table.entry td:nth-child(3) { grid-area: unit; }
+      table.entry td:nth-child(4) { grid-area: qty; } table.entry td:nth-child(5) { grid-area: qunit; }
+      table.entry td:nth-child(6) { grid-area: price; }
+      table.entry td.amount { grid-area: amount; }
+      table.entry td.amount::before { display: inline; margin-right: 8px; }
+      table.entry td.amount:empty { display: none; }
+      table.entry tfoot tr { display: block; border-bottom: 0; }
+      button.x { min-width: 44px; }
+      dialog.history { width: 100%; }
     }
   `,
 })
@@ -318,6 +358,8 @@ export class PartsBill {
   private view = inject(ChangeDetectorRef);
   private historyDialog = viewChild.required<ElementRef<HTMLDialogElement>>('history');
   private first = viewChild.required<ElementRef<HTMLInputElement>>('first');
+  private preview = viewChild.required<ElementRef<HTMLElement>>('preview');
+  zoom = signal(1); // the preview is scaled down when the screen is narrower than the paper
   rowEmpty = isEmpty;
 
   canWrite = inject(AuthService).has('bill.write');
@@ -341,7 +383,14 @@ export class PartsBill {
   constructor() {
     // The browser takes the paper size from @page, which cannot be bound in a template.
     this.suggestNo();
-    afterNextRender(() => this.first().nativeElement.focus());
+    const destroyRef = inject(DestroyRef);
+    afterNextRender(() => {
+      this.first().nativeElement.focus();
+      const sheetWidth = 9.5 * 96; // CSS pixels
+      const watcher = new ResizeObserver(([box]) => this.zoom.set(Math.min(1, box.contentRect.width / sheetWidth)));
+      watcher.observe(this.preview().nativeElement);
+      destroyRef.onDestroy(() => watcher.disconnect());
+    });
     this.http.get<Product[]>('/api/products').subscribe(p => this.products.set(p));
     this.http.get<Customer[]>('/api/customers').subscribe(c => this.customers.set(c));
     const style = document.createElement('style');
@@ -354,6 +403,12 @@ export class PartsBill {
 
   paper() { return PAPERS[this.settings.paper] ?? PAPERS.half; }
   formRows() { return this.bill.rows.slice(0, this.paper().rows); }
+  /** How many lines are in use, counted up to the last one that has content. */
+  usedRows() {
+    let used = this.bill.rows.length;
+    while (used > 0 && isEmpty(this.bill.rows[used - 1])) used--;
+    return used;
+  }
 
   /** Rows are numbered only when they are an item (have a quantity or price), like the paper original. */
   numberOf(i: number) {
@@ -382,7 +437,8 @@ export class PartsBill {
     const box = e.target;
     if (!(box instanceof HTMLInputElement) || box.type === 'checkbox') return;
     e.preventDefault();
-    const boxes = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLInputElement>('input:not([type=checkbox])')];
+    const boxes = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLInputElement>('input:not([type=checkbox])')]
+      .filter(b => b.offsetParent !== null); // skip lines that are hidden on a phone
     const next = boxes[boxes.indexOf(box) + 1];
     next?.focus();
     next?.select();
@@ -449,9 +505,7 @@ export class PartsBill {
     const problem = this.saveProblem();
     if (problem) { this.notify.error(problem); return false; }
     const { id, rows, ...fields } = this.bill;
-    let used = rows.length; // keep blank lines between items, drop the trailing ones
-    while (used > 0 && isEmpty(rows[used - 1])) used--;
-    const body = { ...fields, rows: rows.slice(0, used) };
+    const body = { ...fields, rows: rows.slice(0, this.usedRows()) }; // blank lines between items stay, trailing ones go
     this.busy.set(true);
     try {
       if (id) await firstValueFrom(this.http.put(`/api/parts-bills/${id}`, body));

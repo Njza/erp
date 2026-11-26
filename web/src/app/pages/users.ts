@@ -16,7 +16,7 @@ interface Role { id: number; name: string }
       @if (canWrite) { <button class="primary" (click)="open()">新建用户</button> }
     </header>
 
-    <table>
+    <table class="scroll">
       <thead><tr><th>用户名</th><th>姓名</th><th>角色</th><th>状态</th><th></th></tr></thead>
       <tbody>
         @for (u of users(); track u.id) {
