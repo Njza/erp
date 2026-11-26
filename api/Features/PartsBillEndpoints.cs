@@ -39,7 +39,7 @@ public static class PartsBillEndpoints
             var total = await query.CountAsync();
             var items = await query.OrderByDescending(b => b.Date).ThenByDescending(b => b.No)
                 .Skip((Math.Max(page ?? 1, 1) - 1) * PageSize).Take(PageSize)
-                .Select(b => new { b.Id, b.No, b.Date, b.Customer, b.Handler, b.Total })
+                .Select(b => new { b.Id, b.No, b.Date, b.Customer, b.Handler, b.Total, b.PrintCount, b.LastPrintedAt })
                 .ToListAsync();
             return new { items, total, pageSize = PageSize };
         }).RequirePermission(Perm.BillRead);
@@ -76,6 +76,19 @@ public static class PartsBillEndpoints
             await db.SaveChangesAsync(); // a duplicate number becomes 409 in AppExceptionHandler
             return new { bill.Id };
         }).RequirePermission(Perm.BillWrite);
+
+        // Called by the page each time it sends the bill to the printer. Anyone who may open a bill may print it.
+        // The server cannot see the printer: this records that printing was started, not that paper came out.
+        g.MapPost("/{id:int}/printed", async (int id, AppDb db) =>
+        {
+            // One UPDATE in the database, so two prints at the same moment are both counted.
+            var now = DateTime.UtcNow;
+            var found = await db.PartsBills.Where(b => b.Id == id).ExecuteUpdateAsync(s => s
+                .SetProperty(b => b.PrintCount, b => b.PrintCount + 1)
+                .SetProperty(b => b.LastPrintedAt, now));
+            if (found == 0) throw new AppException(404, "NOT_FOUND", "单据不存在。");
+            return Results.NoContent();
+        }).RequirePermission(Perm.BillRead);
 
         g.MapPut("/{id:int}", async (int id, SavePartsBillRequest req, AppDb db) =>
         {
@@ -125,6 +138,6 @@ public static class PartsBillEndpoints
     static object ToDto(PartsBill b) => new
     {
         b.Id, b.No, b.Date, b.Handler, b.Customer, b.Picker, b.Installer, b.Receiver,
-        b.Settle, b.Warranty, b.Rows, b.Total,
+        b.Settle, b.Warranty, b.Rows, b.Total, b.PrintCount,
     };
 }

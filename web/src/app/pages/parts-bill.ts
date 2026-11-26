@@ -33,7 +33,7 @@ interface Bill {
   id: number; no: string; date: string; handler: string; customer: string; picker: string; installer: string; receiver: string;
   settle: boolean; warranty: boolean; rows: Row[];
 }
-interface BillSummary { id: number; no: string; date: string; customer: string; handler: string; total: number }
+interface BillSummary { id: number; no: string; date: string; customer: string; handler: string; total: number; printCount: number }
 
 // unit is not looked at: it is not typed per line, it follows the bill's 使用单位.
 const isEmpty = (r: Row) => !r.name && r.qty === null && r.price === null;
@@ -52,7 +52,9 @@ const num = (n: number) => String(+n.toFixed(2));
   template: `
     <div class="no-print">
       <header class="page-head bar">
-        <h1>更换配件清单 <small [class.warn]="status() !== '已保存'">{{ status() }}</small></h1>
+        <h1>更换配件清单 <small [class.warn]="status() !== '已保存'">{{ status() }}</small>
+          @if (bill.id) { <small [class.warn]="!printCount()">{{ printText(printCount()) }}</small> }
+        </h1>
         <div class="buttons">
           <button (click)="openHistory()">历史记录</button>
           @if (canWrite) {
@@ -75,16 +77,17 @@ const num = (n: number) => String(+n.toFixed(2));
           <button>搜索</button>
         </form>
         <table class="scroll">
-          <thead><tr><th>单据编号</th><th>日期</th><th>使用单位</th><th>经手人</th><th class="r">合计</th><th></th></tr></thead>
+          <thead><tr><th>单据编号</th><th>日期</th><th>使用单位</th><th>经手人</th><th class="r">合计</th><th>打印</th><th></th></tr></thead>
           <tbody>
             @for (b of list().items; track b.id) {
               <tr>
                 <td>{{ b.no }}</td><td>{{ b.date }}</td><td>{{ b.customer }}</td><td>{{ b.handler }}</td>
                 <td class="r">{{ numText(b.total) }}</td>
+                <td [class.unprinted]="!b.printCount">{{ printText(b.printCount) }}</td>
                 <td class="actions"><button (click)="open(b.id)">打开</button></td>
               </tr>
             } @empty {
-              <tr><td colspan="6" class="muted">没有单据。</td></tr>
+              <tr><td colspan="7" class="muted">没有单据。</td></tr>
             }
           </tbody>
         </table>
@@ -254,6 +257,7 @@ const num = (n: number) => String(+n.toFixed(2));
     .search { display: flex; gap: 8px; margin-bottom: 12px; }
     .search input { flex: 1; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
     .history .r { text-align: right; }
+    .history .unprinted { color: var(--danger); }
     .history menu { align-items: center; }
     .history menu span { margin-right: auto; }
     /* The action bar stays in view while the form scrolls. */
@@ -368,6 +372,7 @@ export class PartsBill {
 
   canWrite = inject(AuthService).has('bill.write');
   busy = signal(false);
+  printCount = signal(0); // of the open bill
   settings = this.loadSettings();
   setupOpen = !this.settings.company; // decided once: it must not close while the header is being typed
   bill = this.blankBill();
@@ -505,8 +510,17 @@ export class PartsBill {
 
   print() {
     const problem = this.printProblem();
-    if (problem) this.notify.error(problem); else window.print();
+    if (problem) { this.notify.error(problem); return; }
+    window.print();
+    // The browser does not say whether the user printed or cancelled the dialog,
+    // so this counts every time the bill was sent to the print dialog.
+    const id = this.bill.id;
+    if (id) this.http.post(`/api/parts-bills/${id}/printed`, null).subscribe(() => {
+      if (id === this.bill.id) this.printCount.update(n => n + 1);
+    });
   }
+
+  printText(count: number) { return count ? `已打印 ${count} 次` : '未打印'; }
 
 
   /** Saves the bill (create or update). Returns false when the server refused it; the interceptor shows why. */
@@ -547,6 +561,7 @@ export class PartsBill {
     if (!this.discardOk()) return;
     this.bill = this.blankBill();
     this.savedJson = JSON.stringify(this.bill);
+    this.printCount.set(0);
     this.suggestNo();
     this.first().nativeElement.focus();
   }
@@ -577,11 +592,12 @@ export class PartsBill {
 
   async open(id: number) {
     if (!this.discardOk()) return;
-    let saved: Bill;
-    try { saved = await firstValueFrom(this.http.get<Bill>(`/api/parts-bills/${id}`)); } catch { return; }
+    let saved: Bill, printCount: number;
+    try { ({ printCount, ...saved } = await firstValueFrom(this.http.get<Bill & { printCount: number }>(`/api/parts-bills/${id}`))); } catch { return; }
     // The form always has MAX_ROWS lines; the server stores only the used ones.
     const rows = [...saved.rows, ...Array.from({ length: MAX_ROWS - saved.rows.length }, blankRow)];
     this.bill = { ...this.blankBill(), ...saved, rows };
+    this.printCount.set(printCount);
     this.savedJson = JSON.stringify(this.bill);
     this.view.markForCheck();
     this.historyDialog().nativeElement.close();

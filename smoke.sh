@@ -65,8 +65,11 @@ check "duplicate bill number"     409 DUPLICATE           POST /parts-bills "$AD
 check "read bill"                 200 - GET "/parts-bills/$BILL_ID" "$ADMIN"
 jq -e '.total == 3 and (.rows | length) == 2 and .date == "2026-01-02"' <<<"$BODY" >/dev/null || { echo "FAIL: bill content: $BODY"; exit 1; }
 check "update bill"               204 - PUT "/parts-bills/$BILL_ID" "$ADMIN" "${BILL/\"qty\":2/\"qty\":4}"
+check "mark bill printed"         204 - POST "/parts-bills/$BILL_ID/printed" "$ADMIN"
+check "mark bill printed again"   204 - POST "/parts-bills/$BILL_ID/printed" "$ADMIN"
+check "printed missing bill"      404 NOT_FOUND           POST /parts-bills/999999/printed "$ADMIN"
 check "search history"            200 - GET "/parts-bills?q=smoke$S" "$ADMIN"
-jq -e '.total == 1 and .items[0].total == 6' <<<"$BODY" >/dev/null || { echo "FAIL: history: $BODY"; exit 1; }
+jq -e '.total == 1 and .items[0].total == 6 and .items[0].printCount == 2 and .items[0].lastPrintedAt != null' <<<"$BODY" >/dev/null || { echo "FAIL: history: $BODY"; exit 1; }
 check "handler suggestions"       200 - GET /parts-bills/handlers "$ADMIN"
 jq -e --arg h "h$S" 'index($h) != null' <<<"$BODY" >/dev/null || { echo "FAIL: handler not suggested: $BODY"; exit 1; }
 check "installer suggestions"     200 - GET /parts-bills/installers "$ADMIN"

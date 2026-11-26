@@ -55,6 +55,8 @@ public class PartsBill
     public bool Warranty { get; set; }          // 配件保修半年，易损件除外
     public List<PartsBillRow> Rows { get; set; } = []; // stored as one JSON column, in print order
     public decimal Total { get; set; }          // computed by the server from Rows
+    public int PrintCount { get; set; }         // how many times the print dialog was opened for this bill
+    public DateTime? LastPrintedAt { get; set; }
     public int CreatedById { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

@@ -74,6 +74,9 @@ namespace Erp.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("LastPrintedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("No")
                         .IsRequired()
                         .HasColumnType("text");
@@ -81,6 +84,9 @@ namespace Erp.Api.Data.Migrations
                     b.Property<string>("Picker")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int>("PrintCount")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Receiver")
                         .IsRequired()
