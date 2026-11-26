@@ -4,7 +4,6 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../core/auth';
 import { NotifyService } from '../core/notify';
-import type { Customer } from './customers';
 import type { Product } from './products';
 import { rmbUpper } from '../core/rmb';
 
@@ -140,7 +139,7 @@ const num = (n: number) => String(+n.toFixed(2));
               <tr><td colspan="7" class="amount">合计：<strong>￥{{ numText(total()) }} 元</strong>　{{ upper() }}</td></tr>
             </tfoot>
           </table>
-          <p class="muted">库里没有的名称可以直接输入。只填名称的一行会原样打印，可用来写配件编号。</p>
+          <p class="muted">库里没有的使用单位、经手人、维修安装员和配件都可以直接输入，保存单据时会自动加入各自的库，下次就有提示。只填名称的一行会原样打印，可用来写配件编号，不会加入产品库。</p>
         </section>
 
         <section>
@@ -169,7 +168,7 @@ const num = (n: number) => String(+n.toFixed(2));
         @for (n of installers(); track n) { <option [value]="n"></option> }
       </datalist>
       <datalist id="customer-list">
-        @for (c of customers(); track c.id) { <option [value]="c.name"></option> }
+        @for (c of customers(); track c) { <option [value]="c"></option> }
       </datalist>
 
       <details [open]="setupOpen">
@@ -379,8 +378,9 @@ export class PartsBill {
   private savedJson = JSON.stringify(this.bill); // the bill as last saved or loaded, to detect unsaved edits
 
   products = signal<Product[]>([]);
-  customers = signal<Customer[]>([]);
-  handlers = signal<string[]>([]); // names used on earlier bills
+  // The suggestion lists. A bill that uses a new value adds it on the server, so they are reloaded after each save.
+  customers = signal<string[]>([]);
+  handlers = signal<string[]>([]);
   installers = signal<string[]>([]);
 
   // History dialog state.
@@ -402,10 +402,7 @@ export class PartsBill {
       watcher.observe(this.preview().nativeElement);
       destroyRef.onDestroy(() => watcher.disconnect());
     });
-    this.http.get<Product[]>('/api/products').subscribe(p => this.products.set(p));
-    this.http.get<Customer[]>('/api/customers').subscribe(c => this.customers.set(c));
-    this.http.get<string[]>('/api/parts-bills/handlers').subscribe(h => this.handlers.set(h));
-    this.http.get<string[]>('/api/parts-bills/installers').subscribe(n => this.installers.set(n));
+    this.loadLists();
     const style = document.createElement('style');
     document.head.appendChild(style);
     effect(onCleanup => {
@@ -427,6 +424,15 @@ export class PartsBill {
   numberOf(i: number) {
     const rows = this.bill.rows;
     return this.isItem(rows[i]) ? rows.slice(0, i + 1).filter(this.isItem).length : '';
+  }
+
+  private loadLists() {
+    const names = (kind: string, into: typeof this.customers) =>
+      this.http.get<{ name: string }[]>(`/api/names/${kind}`).subscribe(list => into.set(list.map(n => n.name)));
+    names('customer', this.customers);
+    names('handler', this.handlers);
+    names('installer', this.installers);
+    this.http.get<Product[]>('/api/products').subscribe(p => this.products.set(p));
   }
 
   /** A name that is exactly a product's name fills in what usually follows: its unit and quantity 1. */
@@ -538,12 +544,7 @@ export class PartsBill {
     } catch { return false; }
     finally { this.busy.set(false); }
     this.savedJson = JSON.stringify(this.bill);
-    // A new name is offered at once, without reloading the lists.
-    const offer = (names: typeof this.handlers, name: string) => {
-      if (name && !names().includes(name)) names.update(list => [...list, name].sort());
-    };
-    offer(this.handlers, this.bill.handler.trim());
-    offer(this.installers, this.bill.installer.trim());
+    this.loadLists(); // the server has just added any new customer, person or part
     try { localStorage.setItem(HANDLER_KEY, this.bill.handler); } catch { /* not remembered in a private window */ }
     this.view.markForCheck();
     this.notify.success('单据已保存。');

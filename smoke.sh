@@ -58,7 +58,7 @@ check "admin role is read-only"   400 BUILT_IN_ROLE       PUT /roles/1 "$ADMIN" 
 
 # Parts bills: save, server-side total, unique number, history search, permissions.
 BILL_NO="T$S"
-BILL="{\"no\":\"$BILL_NO\",\"date\":\"2026-01-02\",\"customer\":\"smoke$S\",\"handler\":\"h$S\",\"installer\":\"i$S\",\"settle\":true,\"warranty\":false,\"rows\":[{\"name\":\"a\",\"unit\":\"\",\"qty\":2,\"qtyUnit\":\"x\",\"price\":1.5},{\"name\":\"note only\"}]}"
+BILL="{\"no\":\"$BILL_NO\",\"date\":\"2026-01-02\",\"customer\":\"smoke$S\",\"handler\":\"h$S\",\"installer\":\"i$S\",\"settle\":true,\"warranty\":false,\"rows\":[{\"name\":\"a$S\",\"unit\":\"\",\"qty\":2,\"qtyUnit\":\"x\",\"price\":1.5},{\"name\":\"note only\"}]}"
 check "create bill"               200 - POST /parts-bills "$ADMIN" "$BILL"
 BILL_ID=$(jq -r .id <<<"$BODY")
 check "duplicate bill number"     409 DUPLICATE           POST /parts-bills "$ADMIN" "$BILL"
@@ -70,10 +70,37 @@ check "mark bill printed again"   204 - POST "/parts-bills/$BILL_ID/printed" "$A
 check "printed missing bill"      404 NOT_FOUND           POST /parts-bills/999999/printed "$ADMIN"
 check "search history"            200 - GET "/parts-bills?q=smoke$S" "$ADMIN"
 jq -e '.total == 1 and .items[0].total == 6 and .items[0].printCount == 2 and .items[0].lastPrintedAt != null' <<<"$BODY" >/dev/null || { echo "FAIL: history: $BODY"; exit 1; }
-check "handler suggestions"       200 - GET /parts-bills/handlers "$ADMIN"
-jq -e --arg h "h$S" 'index($h) != null' <<<"$BODY" >/dev/null || { echo "FAIL: handler not suggested: $BODY"; exit 1; }
-check "installer suggestions"     200 - GET /parts-bills/installers "$ADMIN"
-jq -e --arg i "i$S" 'index($i) != null' <<<"$BODY" >/dev/null || { echo "FAIL: installer not suggested: $BODY"; exit 1; }
+
+# Saving a bill adds what it uses to the lists. A line with only a name is a note, not a product.
+check "bill added its customer"   200 - GET /names/customer "$ADMIN"
+jq -e --arg n "smoke$S" 'any(.[]; .name == $n)' <<<"$BODY" >/dev/null || { echo "FAIL: customer not added: $BODY"; exit 1; }
+check "bill added its installer"  200 - GET /names/installer "$ADMIN"
+jq -e --arg n "i$S" 'any(.[]; .name == $n)' <<<"$BODY" >/dev/null || { echo "FAIL: installer not added"; exit 1; }
+check "bill added its handler"    200 - GET /names/handler "$ADMIN"
+HANDLER_ID=$(jq -r --arg n "h$S" '.[] | select(.name == $n) | .id' <<<"$BODY")
+[ -n "$HANDLER_ID" ] || { echo "FAIL: handler not added"; exit 1; }
+check "bill added its part"       200 - GET /products "$ADMIN"
+jq -e --arg n "a$S" 'any(.[]; .name == $n and .unit == "x") and (any(.[]; .name == "note only") | not)' <<<"$BODY" >/dev/null || { echo "FAIL: part not added, or a note was: $BODY"; exit 1; }
+PART_ID=$(jq -r --arg n "a$S" '.[] | select(.name == $n) | .id' <<<"$BODY")
+
+# Soft delete: gone from the lists; the bill keeps its text; saving the old bill again does not
+# bring the value back; using it on a new bill does.
+check "delete handler"            204 - DELETE "/names/handler/$HANDLER_ID" "$ADMIN"
+check "delete part"               204 - DELETE "/products/$PART_ID" "$ADMIN"
+check "deleted handler not listed" 200 - GET /names/handler "$ADMIN"
+jq -e --arg n "h$S" 'any(.[]; .name == $n) | not' <<<"$BODY" >/dev/null || { echo "FAIL: deleted handler still listed"; exit 1; }
+check "old bill keeps its text"   200 - GET "/parts-bills/$BILL_ID" "$ADMIN"
+jq -e --arg h "h$S" --arg n "a$S" '.handler == $h and .rows[0].name == $n' <<<"$BODY" >/dev/null || { echo "FAIL: bill changed: $BODY"; exit 1; }
+check "save old bill again"       204 - PUT "/parts-bills/$BILL_ID" "$ADMIN" "${BILL/\"qty\":2/\"qty\":4}"
+check "still deleted after that"  200 - GET /products "$ADMIN"
+jq -e --arg n "a$S" 'any(.[]; .name == $n) | not' <<<"$BODY" >/dev/null || { echo "FAIL: saving an old bill restored a deleted part"; exit 1; }
+check "new bill uses them again"  200 - POST /parts-bills "$ADMIN" "${BILL/\"no\":\"$BILL_NO\"/\"no\":\"${BILL_NO}b\"}"
+check "handler is back"           200 - GET /names/handler "$ADMIN"
+jq -e --arg n "h$S" 'any(.[]; .name == $n)' <<<"$BODY" >/dev/null || { echo "FAIL: handler not restored"; exit 1; }
+check "part is back"              200 - GET /products "$ADMIN"
+jq -e --arg n "a$S" 'any(.[]; .name == $n)' <<<"$BODY" >/dev/null || { echo "FAIL: part not restored"; exit 1; }
+check "viewer may not delete names" 403 FORBIDDEN         DELETE "/names/handler/$HANDLER_ID" "$VIEWER"
+
 check "next number of a day"      200 - GET "/parts-bills/next-no?date=1999-01-02" "$ADMIN"
 [ "$(jq -r .no <<<"$BODY")" = "1999010201" ] || { echo "FAIL: next number: $BODY"; exit 1; }
 check "negative price"            400 INVALID_ROWS           POST /parts-bills "$ADMIN" "{\"no\":\"N$S\",\"date\":\"2026-01-02\",\"rows\":[{\"name\":\"a\",\"qty\":1,\"price\":-1}]}"
@@ -92,17 +119,21 @@ jq -e --arg n "part$S" 'any(.[]; .name == $n and .unit == "set")' <<<"$BODY" >/d
 check "viewer may not add products" 403 FORBIDDEN         POST /products "$VIEWER" "{\"name\":\"v$S\",\"unit\":\"pc\"}"
 check "delete product"            204 - DELETE "/products/$PRODUCT_ID" "$ADMIN"
 check "deleted product is gone"   404 NOT_FOUND           DELETE "/products/$PRODUCT_ID" "$ADMIN"
+check "add deleted product again" 200 - POST /products "$ADMIN" "{\"name\":\"part$S\",\"unit\":\"box\"}"
+[ "$(jq -r .id <<<"$BODY")" = "$PRODUCT_ID" ] || { echo "FAIL: re-adding did not restore the same product"; exit 1; }
 
 # Customers: same rules as products.
-check "create customer"           200 - POST /customers "$ADMIN" "{\"name\":\"cust$S\"}"
+check "create customer"           200 - POST /names/customer "$ADMIN" "{\"name\":\"cust$S\"}"
 CUSTOMER_ID=$(jq -r .id <<<"$BODY")
-check "duplicate customer name"   409 DUPLICATE           POST /customers "$ADMIN" "{\"name\":\"cust$S\"}"
-check "customer without name"     400 HTTP_400            POST /customers "$ADMIN" "{\"name\":\"\"}"
-check "update customer"           204 - PUT "/customers/$CUSTOMER_ID" "$ADMIN" "{\"name\":\"cust$S-b\"}"
-check "viewer may read customers" 200 - GET /customers "$VIEWER"
+check "duplicate customer name"   409 DUPLICATE           POST /names/customer "$ADMIN" "{\"name\":\"cust$S\"}"
+check "customer without name"     400 HTTP_400            POST /names/customer "$ADMIN" "{\"name\":\"\"}"
+check "update customer"           204 - PUT "/names/customer/$CUSTOMER_ID" "$ADMIN" "{\"name\":\"cust$S-b\"}"
+check "viewer may read customers" 200 - GET /names/customer "$VIEWER"
 jq -e --arg n "cust$S-b" 'any(.[]; .name == $n)' <<<"$BODY" >/dev/null || { echo "FAIL: customer not listed"; exit 1; }
-check "viewer may not add customers" 403 FORBIDDEN        POST /customers "$VIEWER" "{\"name\":\"v$S\"}"
-check "delete customer"           204 - DELETE "/customers/$CUSTOMER_ID" "$ADMIN"
+check "viewer may not add customers" 403 FORBIDDEN        POST /names/customer "$VIEWER" "{\"name\":\"v$S\"}"
+check "delete customer"           204 - DELETE "/names/customer/$CUSTOMER_ID" "$ADMIN"
+check "add deleted customer again" 200 - POST /names/customer "$ADMIN" "{\"name\":\"cust$S-b\"}"
+[ "$(jq -r .id <<<"$BODY")" = "$CUSTOMER_ID" ] || { echo "FAIL: re-adding did not restore the same record"; exit 1; }
 
 # Disabling a user must take effect on the token they already hold.
 check "disable viewer"            204 - PUT "/users/$USER_ID" "$ADMIN" "{\"displayName\":\"Viewer\",\"isActive\":false,\"roleIds\":[$ROLE]}"

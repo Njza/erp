@@ -16,15 +16,18 @@ public static class ProductEndpoints
         // Every signed-in user may read products: the bill page uses them for suggestions.
         // shortcut: returns every product in one response and the pages filter in the browser;
         // add server-side search and paging when the list passes a few thousand.
-        g.MapGet("", async (AppDb db) => await db.Products.OrderBy(p => p.Name)
+        g.MapGet("", async (AppDb db) => await db.Products.Where(p => p.DeletedAt == null).OrderBy(p => p.Name)
             .Select(p => new { p.Id, p.Name, p.Unit }).ToListAsync())
             .RequireActiveUser();
 
         g.MapPost("", async (SaveProductRequest req, AppDb db) =>
         {
-            var product = new Product { Name = req.Name.Trim(), Unit = req.Unit.Trim() };
-            db.Products.Add(product);
-            await db.SaveChangesAsync(); // a duplicate name becomes 409 in AppExceptionHandler
+            var name = req.Name.Trim();
+            var product = await db.Products.SingleOrDefaultAsync(p => p.Name == name);
+            if (product is { DeletedAt: null }) throw new AppException(409, "DUPLICATE", "已存在相同的记录。");
+            if (product is null) db.Products.Add(product = new Product { Name = name, Unit = req.Unit.Trim() });
+            else { product.DeletedAt = null; product.Unit = req.Unit.Trim(); } // adding a deleted product again restores it
+            await db.SaveChangesAsync();
             return new { product.Id };
         }).RequirePermission(Perm.ProductWrite);
 
@@ -33,18 +36,20 @@ public static class ProductEndpoints
             var product = await Find(db, id);
             product.Name = req.Name.Trim();
             product.Unit = req.Unit.Trim();
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(); // a name that exists, deleted ones included, becomes 409
             return Results.NoContent();
         }).RequirePermission(Perm.ProductWrite);
 
         g.MapDelete("/{id:int}", async (int id, AppDb db) =>
         {
-            db.Products.Remove(await Find(db, id));
+            // Soft delete: the product leaves the list, bills that used it keep their text.
+            (await Find(db, id)).DeletedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequirePermission(Perm.ProductWrite);
     }
 
     static async Task<Product> Find(AppDb db, int id) =>
-        await db.Products.FindAsync(id) ?? throw new AppException(404, "NOT_FOUND", "产品不存在。");
+        await db.Products.SingleOrDefaultAsync(p => p.Id == id && p.DeletedAt == null)
+        ?? throw new AppException(404, "NOT_FOUND", "产品不存在。");
 }

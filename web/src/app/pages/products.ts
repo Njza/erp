@@ -33,7 +33,7 @@ export interface Product { id: number; name: string; unit: string }
         }
       </tbody>
     </table>
-    <p class="muted">共 {{ products().length }} 个产品。产品不带价格，价格在每张单据上填写。</p>
+    <p class="muted">共 {{ products().length }} 个产品。产品不带价格，价格在每张单据上填写。在单据上填了这里没有的配件，保存单据时会自动加进来。</p>
 
     <dialog #dialog>
       <form ngNativeValidate (ngSubmit)="save()">
@@ -80,7 +80,7 @@ export class Products {
   }
 
   async remove(p: Product) {
-    if (!confirm(`确定删除产品“${p.name}”吗？已保存的单据不受影响。`)) return;
+    if (!confirm(`确定删除产品“${p.name}”吗？\n它不再出现在提示里，已保存的单据不受影响。以后再用到这个名称时会自动恢复。`)) return;
     try { await firstValueFrom(this.http.delete(`/api/products/${p.id}`)); } catch { return; }
     this.notify.success('产品已删除。');
     this.load();

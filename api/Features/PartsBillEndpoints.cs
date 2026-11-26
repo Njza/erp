@@ -55,24 +55,16 @@ public static class PartsBillEndpoints
             return new { no = prefix + seq.ToString("00") };
         }).RequirePermission(Perm.BillWrite);
 
-        // Names for the 经手人 and 维修安装员 suggestions: everyone who appears on a saved bill.
-        // No separate list to maintain.
-        g.MapGet("/handlers", async (AppDb db) => await db.PartsBills
-            .Where(b => b.Handler != "").Select(b => b.Handler).Distinct().OrderBy(h => h).ToListAsync())
-            .RequirePermission(Perm.BillRead);
-
-        g.MapGet("/installers", async (AppDb db) => await db.PartsBills
-            .Where(b => b.Installer != "").Select(b => b.Installer).Distinct().OrderBy(h => h).ToListAsync())
-            .RequirePermission(Perm.BillRead);
-
         g.MapGet("/{id:int}", async (int id, AppDb db) => ToDto(await Find(db, id)))
             .RequirePermission(Perm.BillRead);
 
         g.MapPost("", async (SavePartsBillRequest req, ClaimsPrincipal principal, AppDb db) =>
         {
             var bill = new PartsBill { No = req.No.Trim(), CreatedById = principal.UserId() };
+            var before = Catalog.ValuesOf(bill); // empty: everything on a new bill counts as newly used
             Apply(bill, req);
             db.PartsBills.Add(bill);
+            await Catalog.LearnAsync(db, bill, before);
             await db.SaveChangesAsync(); // a duplicate number becomes 409 in AppExceptionHandler
             return new { bill.Id };
         }).RequirePermission(Perm.BillWrite);
@@ -93,7 +85,9 @@ public static class PartsBillEndpoints
         g.MapPut("/{id:int}", async (int id, SavePartsBillRequest req, AppDb db) =>
         {
             var bill = await Find(db, id);
+            var before = Catalog.ValuesOf(bill);
             Apply(bill, req);
+            await Catalog.LearnAsync(db, bill, before);
             bill.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
             return Results.NoContent();

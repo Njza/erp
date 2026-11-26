@@ -22,22 +22,33 @@ public class Role
 }
 
 /// A part that can be picked on a bill. Bills copy the name and unit as text, so a product
-/// can be renamed or deleted without changing old bills. No price: prices are typed per bill.
+/// can be renamed or deleted without changing old bills. Deleting is soft, see NameOption. No price: prices are typed per bill.
 public class Product
 {
     public int Id { get; set; }
     public required string Name { get; set; } // unique
     public required string Unit { get; set; } // 台, 个, 条, ...
+    public DateTime? DeletedAt { get; set; }  // soft delete: hidden from lists, restored when the name is used again
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
-/// A customer (使用单位) that can be picked on a bill. Bills copy the name as text,
-/// so a customer can be renamed or deleted without changing old bills.
-public class Customer
+/// A name offered in a suggestion list of the bill page: a customer (使用单位), a handler (经手人)
+/// or an installer (维修安装员). Bills copy the name as text, so renaming or deleting one
+/// never changes an old bill. Deleting is soft: the row stays and comes back when the name is used again.
+public class NameOption
 {
     public int Id { get; set; }
-    public required string Name { get; set; } // unique
+    public required string Kind { get; set; } // one of NameKind
+    public required string Name { get; set; } // unique within its kind, deleted rows included
+    public DateTime? DeletedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public static class NameKind
+{
+    public const string Customer = "customer";
+    public const string Handler = "handler";
+    public const string Installer = "installer";
 }
 
 /// A printed "更换配件清单". The company header is not stored: it comes from the print settings.
@@ -78,14 +89,14 @@ public class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<PartsBill> PartsBills => Set<PartsBill>();
     public DbSet<Product> Products => Set<Product>();
-    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<NameOption> NameOptions => Set<NameOption>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<User>().HasIndex(u => u.Username).IsUnique();
         b.Entity<Role>().HasIndex(r => r.Name).IsUnique();
         b.Entity<Product>().HasIndex(p => p.Name).IsUnique();
-        b.Entity<Customer>().HasIndex(c => c.Name).IsUnique();
+        b.Entity<NameOption>().HasIndex(n => new { n.Kind, n.Name }).IsUnique();
         b.Entity<PartsBill>(e =>
         {
             e.HasIndex(x => x.No).IsUnique();
