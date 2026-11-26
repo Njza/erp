@@ -15,7 +15,7 @@ var jwtKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKeyText));
 builder.Services.AddDbContext<AppDb>(o => o.UseNpgsql(cfg.GetConnectionString("Default")));
 builder.Services.AddSingleton(new TokenService(jwtKey));
 
-// Error contract: every non-2xx response is ProblemDetails with a "code" (see Common/Errors.cs).
+// Error contract: every non-2xx response is ProblemDetails with a "code" (see Shared/Errors.cs).
 builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
 {
     // No "code" yet means the framework wrote this response (not AppExceptionHandler): give it a code and a Chinese title.

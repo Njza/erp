@@ -1,6 +1,6 @@
 # ERP skeleton
 
-.NET 10 minimal API + Angular 22 + PostgreSQL 18. It contains login, RBAC, database
+.NET 11 minimal API + Angular 22 + PostgreSQL 18. It contains login, RBAC, database
 initialisation and one error/notification contract. Business modules go on top.
 
 ## Deploy (Docker, external database)
@@ -49,21 +49,27 @@ To try the deployment stack on your own machine, point `.env` at the dev databas
 ## Layout
 
 ```
-api/
-  Program.cs            wiring: auth, rate limit, error contract, endpoint groups
-  Auth/Auth.cs          Perm (permission catalog), TokenService, RequirePermission()
-  Common/Errors.cs      AppException + the one exception handler
-  Data/AppDb.cs         entities and DbContext
-  Data/DbInit.cs        migrate + seed admin role and first user
-  Data/Migrations/      EF Core migrations
-  Features/*.cs         one file per module: request records + endpoints
+api/                       one project, one namespace; a modular monolith
+  Program.cs               wiring: auth, rate limit, error contract, endpoint groups
+  Shared/                  the shared kernel; keep it small
+    AppException.cs        a business error, thrown anywhere
+    Errors.cs              the one exception handler
+    AuthExtensions.cs      RequirePermission(), RequireActiveUser()
+  Modules/                 one folder per bounded context, layers inside
+    Identity/              Domain/ (User, Role, Perm), Infrastructure/ (TokenService), Endpoints/
+    Billing/               Domain/ (PartsBill, PartsBillRow), Endpoints/
+    Catalog/               Domain/ (Product, NameOption), Application/ (Catalog: learns names from a saved bill), Endpoints/
+  Persistence/             AppDb (DbContext), DbInit (migrate + seed), Migrations/
   Dockerfile
 web/src/app/
-  core/auth.ts          AuthService (token, me, has()), authGuard
-  core/http.ts          apiInterceptor (token + error toast), AppErrorHandler
-  core/notify.ts        NotifyService: the only way to show a message
-  app.routes.ts         routes; also the source of the side menu
-  pages/                login, shell (layout), home, users, roles
+  core/auth.ts             AuthService (token, me, has()), authGuard
+  core/http.ts             apiInterceptor (token + error toast), AppErrorHandler
+  core/notify.ts           NotifyService: the only way to show a message
+  app.routes.ts            routes; also the source of the side menu
+  shell.ts                 layout with the side menu
+  identity/                login, users, roles
+  billing/                 parts-bill, rmb (amount in Chinese capitals)
+  catalog/                 products, names (customers, staff)
 web/Dockerfile, web/nginx.conf
 docker-compose.yml       deployment: api + web
 docker-compose.dev.yml   development: local Postgres only
@@ -93,7 +99,7 @@ On the client, the interceptor shows every API error as a toast, so a page only 
 
 ## Add a module
 
-1. Add entities to `Data/AppDb.cs`, then `dotnet ef migrations add <Name> -o Data/Migrations` in `api/`.
-2. Add permission constants to `Perm`, and their Chinese names to `PERM_LABELS` in `web/src/app/pages/roles.ts`.
-3. Add `Features/<Module>Endpoints.cs` with `.RequirePermission(Perm.X)`; map it in `Program.cs`.
-4. Add a page in `web/src/app/pages/` and one line in `app.routes.ts` (`data: { label, perm }`).
+1. Add entities in `Modules/<Module>/Domain/` and a `DbSet` in `Persistence/AppDb.cs`, then `dotnet ef migrations add <Name> -o Persistence/Migrations` in `api/`.
+2. Add permission constants to `Perm`, and their Chinese names to `PERM_LABELS` in `web/src/app/identity/roles.ts`.
+3. Add `Modules/<Module>/Endpoints/<Name>Endpoints.cs` with `.RequirePermission(Perm.X)`; map it in `Program.cs`.
+4. Add a page in `web/src/app/<module>/` and one line in `app.routes.ts` (`data: { label, perm }`).
