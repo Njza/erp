@@ -113,7 +113,7 @@ web/src/app/
   core/http.ts             apiInterceptor (CSRF header + error toast), AppErrorHandler
   core/notify.ts           NotifyService: the only way to show a message
   app.routes.ts            routes; also the source of the top menu
-  shell.ts                 layout with the side menu
+  shell.ts                 layout with the top menu
   identity/                login, users, roles
   billing/                 parts-bill, rmb (amount in Chinese capitals)
   catalog/                 products, names (customers, staff)
