@@ -1,0 +1,21 @@
+# Development only: a throwaway local PostgreSQL. Not used in deployment.
+#   docker compose -f docker-compose.dev.yml up -d
+name: erp-dev
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: erp
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: erp_dev # dev-only; matches api/appsettings.Development.json
+    ports:
+      - "127.0.0.1:5433:5432" # 5433 so it does not clash with a Postgres already on 5432
+    volumes:
+      - pg:/var/lib/postgresql # Postgres 18+ keeps its data under this path
+
+networks:
+  default:
+    name: erp-dev # fixed name, so the deployment stack can be tested against this database
+
+volumes:
+  pg:

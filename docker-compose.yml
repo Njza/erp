@@ -1,0 +1,29 @@
+# Deployment: api + web. The database is NOT part of this stack: the API connects to an
+# existing PostgreSQL (for example the shared one that 1Panel manages) over an existing
+# Docker network. All settings come from .env (copy .env.example).
+services:
+  api:
+    build: ./api
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__Default: Host=${DB_HOST:?set DB_HOST in .env};Port=${DB_PORT:-5432};Database=${DB_NAME:?set DB_NAME in .env};Username=${DB_USER:?set DB_USER in .env};Password=${DB_PASSWORD:?set DB_PASSWORD in .env}
+      Jwt__Key: ${JWT_KEY:?set JWT_KEY in .env}
+      Seed__AdminPassword: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      # Take the client IP from X-Forwarded-For. Safe only because the API has no published
+      # port: every request comes through the web container, which overwrites that header.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+    networks: [default, db]
+
+  web:
+    build: ./web
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      # This machine only. The host's reverse proxy (a 1Panel website) adds the domain and HTTPS
+      # and forwards to this port. Do not publish it to the internet: see web/nginx.conf.
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+
+networks:
+  db:
+    external: true
+    name: ${DB_NETWORK:-1panel-network} # the network the database container is on
