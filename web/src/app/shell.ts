@@ -13,7 +13,8 @@ const AUTO_CHECK_MS = 5 * 60_000;
   imports: [RouterOutlet, RouterLink, RouterLinkActive, FormsModule],
   template: `
     <div class="shell">
-      <aside>
+      <!-- One slim bar across the top, so pages get the full width. Account and update controls sit in a popover. -->
+      <header>
         <strong class="brand">ERP</strong>
         <nav>
           @for (item of nav; track item.path) {
@@ -22,14 +23,15 @@ const AUTO_CHECK_MS = 5 * 60_000;
             }
           }
         </nav>
-        <div class="me">
-          <span>{{ auth.me()?.displayName }}</span>
-          <button (click)="auth.logout()">退出登录</button>
-          <small>版本 {{ version() }}</small>
+        <button class="me-btn" popovertarget="me-menu" [class.dot]="newVersion()">{{ auth.me()?.displayName }} ▾</button>
+        <div id="me-menu" class="me" popover #menu>
+          <a routerLink="/password" (click)="menu.hidePopover()">修改密码</a>
+          <span class="muted">版本 {{ version() }}</span>
           <button (click)="checkUpdate(true)">检查更新</button>
           <label class="check"><input type="checkbox" [(ngModel)]="autoCheck" (ngModelChange)="setAutoCheck($event)"> 自动检查更新</label>
+          <button (click)="auth.logout()">退出登录</button>
         </div>
-      </aside>
+      </header>
       <main>
         @if (newVersion()) {
           <!-- The server already runs the new version; this page is still the old one. -->
@@ -45,11 +47,20 @@ const AUTO_CHECK_MS = 5 * 60_000;
   styles: `
     .update { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
               margin-bottom: 16px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 6px; background: var(--surface); }
-    /* Top bar on tablets and phones: the account and update controls on one line, the menu on its own line below. */
-    @media (max-width: 900px) {
-      aside { flex-wrap: wrap; }
-      nav { order: 1; flex-basis: 100%; }
-      .me { flex-wrap: wrap; white-space: nowrap; }
+    header { display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    nav { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    nav a { padding: 10px 12px; white-space: nowrap; color: var(--text); text-decoration: none; border-bottom: 2px solid transparent; }
+    nav a.active { color: var(--accent); font-weight: 600; border-bottom-color: var(--accent); }
+    .me-btn { white-space: nowrap; border: 0; background: none; color: var(--muted); }
+    .me-btn.dot::after { content: ' ●'; color: var(--accent); } /* a new version is waiting */
+    .me { inset: 46px 12px auto auto; margin: 0; padding: 12px; min-width: 180px; flex-direction: column; gap: 8px;
+          border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 4px 14px rgb(0 0 0 / .18); }
+    .me:popover-open { display: flex; }
+    .me a { color: var(--accent); }
+    @media (max-width: 640px) {
+      header { gap: 4px; padding: 0 4px; }
+      .brand { display: none; }
+      .me-btn { max-width: 6em; overflow: hidden; text-overflow: ellipsis; padding: 6px; } /* the menu keeps the room */
     }
   `,
 })
@@ -63,7 +74,7 @@ export class Shell {
   private timer = 0;
   // The menu is the child routes of this shell, so a new page is added in one place: app.routes.ts.
   protected nav = (inject(ActivatedRoute).routeConfig?.children ?? [])
-    .filter(r => r.data?.['label'])
+    .filter(r => r.data?.['label'] && !r.data['account'])
     .map(r => ({ path: '/' + r.path, label: r.data!['label'] as string, perm: r.data!['perm'] as string | undefined }));
 
   constructor() {

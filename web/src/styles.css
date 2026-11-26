@@ -34,13 +34,7 @@ menu { display: flex; justify-content: flex-end; gap: 8px; margin: 16px 0 0; pad
 .card button { width: 100%; }
 dialog::backdrop { background: rgb(0 0 0 / .4); }
 
-.shell { display: grid; grid-template-columns: 200px 1fr; min-height: 100vh; }
-.shell aside { display: flex; flex-direction: column; gap: 16px; padding: 16px; background: var(--surface); border-right: 1px solid var(--border); }
-.shell nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-.shell nav a { padding: 7px 10px; border-radius: 6px; color: var(--text); text-decoration: none; }
-.shell nav a.active { background: var(--bg); color: var(--accent); font-weight: 600; }
-.shell .me { display: flex; flex-direction: column; gap: 8px; color: var(--muted); }
-.shell main { padding: 24px; min-width: 0; } /* no overflow here: it would stop position: sticky inside pages */
+.shell main { padding: 16px 24px; min-width: 0; } /* no overflow here: it would stop position: sticky inside pages */
 
 .page-head { display: flex; justify-content: space-between; align-items: start; }
 table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); }
@@ -68,24 +62,16 @@ td code { font-size: 12px; word-break: break-all; }
   label.check { padding: 6px 0; }
 }
 
-/* Tablet in portrait, and smaller: the side menu becomes a bar across the top. */
+/* Tablet in portrait, and smaller. */
 @media (max-width: 900px) {
   /* iOS zooms the whole page when a focused field has text smaller than 16px. */
   button, input, select { font-size: 16px; }
-  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
-  .shell aside { flex-direction: row; align-items: center; gap: 12px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--border); }
-  .shell nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
-  .shell nav a { padding: 9px 12px; white-space: nowrap; }
-  .shell .me { flex-direction: row; align-items: center; }
-  .shell .me span { display: none; } /* the name gives its place to the menu */
-  .shell .me button { white-space: nowrap; }
   .shell main { padding: 16px; }
 }
 
 /* Phone. */
 @media (max-width: 640px) {
   .shell main { padding: 12px; }
-  .shell .brand { display: none; }
   .page-head { flex-wrap: wrap; gap: 8px; align-items: center; }
   dialog { padding: 16px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
   th, td { padding: 9px 8px; }
@@ -98,7 +84,6 @@ td code { font-size: 12px; word-break: break-all; }
 /* Printing: only the page content goes to paper. A page marks its screen-only parts with .no-print. */
 @media print {
   body { background: #fff; }
-  .shell { display: block; min-height: 0; }
-  .shell aside, .toasts, .no-print { display: none !important; }
+  .shell header, .toasts, .no-print { display: none !important; }
   .shell main { padding: 0; overflow: visible; }
 }
