@@ -28,24 +28,23 @@ const UPDATING_KEY = 'erp.updatingTo'; // carries the update animation across th
         <div id="me-menu" class="me" popover #menu>
           <a routerLink="/password" (click)="menu.hidePopover()">修改密码</a>
           <span class="muted">版本 {{ version() }}</span>
-          <button (click)="checkUpdate(true)">检查更新</button>
+          <div class="row">
+            <button [class.checking]="checking()" [disabled]="checking()" (click)="checkUpdate(true)"><span class="spin" aria-hidden="true"></span>{{ checking() ? '检查中…' : '检查更新' }}</button>
+            @if (newVersion()) {
+              <!-- The server already runs the new version; this page is still the old one. -->
+              <button class="primary" title="请先保存正在编辑的单据" (click)="reload()">更新到 {{ newVersion() }}</button>
+            }
+          </div>
           <label class="check"><input type="checkbox" [(ngModel)]="autoCheck" (ngModelChange)="setAutoCheck($event)"> 自动检查更新</label>
           <button (click)="auth.logout()">退出登录</button>
         </div>
       </header>
       <main>
-        @if (newVersion()) {
-          <!-- The server already runs the new version; this page is still the old one. -->
-          <div class="update no-print" role="alert">
-            <span>有新版本 {{ newVersion() }}。请先保存正在编辑的单据，再点“刷新更新”。</span>
-            <button class="primary" (click)="reload()">刷新更新</button>
-          </div>
-        }
         <router-outlet />
       </main>
     </div>
     @if (phase()) {
-      <!-- Shown from the click on 刷新更新 until the new version has loaded, then it fades out. -->
+      <!-- Shown from the click on 更新到 until the new version has loaded, then it fades out. -->
       <div class="updating no-print" [class.done]="phase() === 'done'" [class.resumed]="resumed" role="status" aria-live="polite">
         <div class="card">
           <svg viewBox="0 0 52 52" aria-hidden="true">
@@ -58,8 +57,11 @@ const UPDATING_KEY = 'erp.updatingTo'; // carries the update animation across th
     }
   `,
   styles: `
-    .update { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
-              margin-bottom: 16px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 6px; background: var(--surface); }
+    .row { display: flex; gap: 8px; }
+    .row button { white-space: nowrap; }
+    .spin { display: none; width: .9em; height: .9em; margin-right: 6px; vertical-align: -1px; border: 2px solid currentColor;
+            border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+    .checking .spin { display: inline-block; }
     header { display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
     nav { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
     nav a { padding: 10px 12px; white-space: nowrap; color: var(--text); text-decoration: none; border-bottom: 2px solid transparent; }
@@ -92,6 +94,7 @@ const UPDATING_KEY = 'erp.updatingTo'; // carries the update animation across th
     @keyframes fade-out { to { opacity: 0; visibility: hidden; } }
     @media (prefers-reduced-motion: reduce) {
       .updating, .card, .ring { animation: none; }
+      .spin { animation-duration: 2s; }
       .done .ring, .done .tick { animation: none; stroke-dashoffset: 0; }
       .updating.done { animation: fade-out 0s 1.4s forwards; }
     }
@@ -110,8 +113,9 @@ export class Shell {
   protected newVersion = signal(''); // set when the server runs a different one
   protected phase = signal<'' | 'updating' | 'done'>(''); // the full-screen update animation
   protected target = signal(''); // the version being updated to
-  protected resumed = false; // this page was loaded by 刷新更新
+  protected resumed = false; // this page was loaded by 更新到
   protected autoCheck = readAutoCheck();
+  protected checking = signal(false); // a manual check is running
   private timer = 0;
   // The menu is the child routes of this shell, so a new page is added in one place: app.routes.ts.
   protected nav = (inject(ActivatedRoute).routeConfig?.children ?? [])
@@ -119,7 +123,7 @@ export class Shell {
     .map(r => ({ path: '/' + r.path, label: r.data!['label'] as string, perm: r.data!['perm'] as string | undefined }));
 
   constructor() {
-    // Just reloaded by 刷新更新: keep the animation going until the version is known, then finish it.
+    // Just reloaded by 更新到: keep the animation going until the version is known, then finish it.
     const updatingTo = takeUpdating();
     if (updatingTo) { this.target.set(updatingTo); this.phase.set('updating'); this.resumed = true; }
     this.http.get<{ version: string }>('/api/version').subscribe({
@@ -135,9 +139,19 @@ export class Shell {
 
   /** Web and API are deployed together, so a changed API version means this page's code is old. */
   checkUpdate(manual: boolean) {
-    this.http.get<{ version: string }>('/api/version', { context: new HttpContext().set(SILENT, !manual) }).subscribe(v => {
-      if (this.version() && v.version !== this.version()) this.newVersion.set(v.version);
-      else if (manual) this.notify.success(`已是最新版本 ${v.version}。`);
+    if (manual) this.checking.set(true);
+    // A manual check spins for at least 600 ms, so the click is seen even when the answer is instant.
+    const started = Date.now();
+    const settle = (then?: () => void) => setTimeout(() => {
+      if (manual) this.checking.set(false);
+      then?.();
+    }, manual ? Math.max(0, 600 - (Date.now() - started)) : 0);
+    this.http.get<{ version: string }>('/api/version', { context: new HttpContext().set(SILENT, !manual) }).subscribe({
+      next: v => settle(() => {
+        if (this.version() && v.version !== this.version()) this.newVersion.set(v.version);
+        else if (manual) this.notify.success(`已是最新版本 ${v.version}。`);
+      }),
+      error: () => settle(),
     });
   }
 
