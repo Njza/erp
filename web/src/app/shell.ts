@@ -8,6 +8,7 @@ import { NotifyService } from './core/notify';
 
 const AUTO_CHECK_KEY = 'erp.autoUpdateCheck'; // per PC, like the print settings
 const AUTO_CHECK_MS = 5 * 60_000;
+const UPDATING_KEY = 'erp.updatingTo'; // carries the update animation across the reload
 
 @Component({
   imports: [RouterOutlet, RouterLink, RouterLinkActive, FormsModule],
@@ -43,6 +44,18 @@ const AUTO_CHECK_MS = 5 * 60_000;
         <router-outlet />
       </main>
     </div>
+    @if (phase()) {
+      <!-- Shown from the click on 刷新更新 until the new version has loaded, then it fades out. -->
+      <div class="updating no-print" [class.done]="phase() === 'done'" [class.resumed]="resumed" role="status" aria-live="polite">
+        <div class="card">
+          <svg viewBox="0 0 52 52" aria-hidden="true">
+            <circle class="ring" cx="26" cy="26" r="22" />
+            <path class="tick" d="M15 27 l8 8 l15 -17" />
+          </svg>
+          <p>{{ phase() === 'done' ? '已更新到 ' + version() : '正在更新到 ' + target() + '…' }}</p>
+        </div>
+      </div>
+    }
   `,
   styles: `
     .update { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
@@ -57,6 +70,31 @@ const AUTO_CHECK_MS = 5 * 60_000;
           border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 4px 14px rgb(0 0 0 / .18); }
     .me:popover-open { display: flex; }
     .me a { color: var(--accent); }
+    .updating { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+                background: rgb(0 0 0 / .35); backdrop-filter: blur(3px); animation: fade-in .2s ease-out; }
+    .updating.done { animation: fade-out .4s ease-in 1.4s forwards; }
+    .card { display: grid; justify-items: center; gap: 12px; padding: 28px 36px; border-radius: 12px;
+            background: var(--surface); color: var(--text); box-shadow: 0 8px 30px rgb(0 0 0 / .25); animation: pop .25s ease-out; }
+    .card p { margin: 0; }
+    svg { width: 52px; height: 52px; fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+    /* Updating: a spinning arc. Done: the arc closes into a circle and a tick is drawn. */
+    .ring { stroke-dasharray: 138; stroke-dashoffset: 100; transform-origin: center; animation: spin .9s linear infinite; }
+    .tick { stroke-dasharray: 36; stroke-dashoffset: 36; }
+    /* After the reload the overlay continues what the old page showed, so it does not appear again. */
+    .updating.resumed:not(.done), .resumed .card { animation: none; }
+    .done .ring { animation: close-ring .35s ease-out forwards; }
+    .done .tick { animation: draw .3s ease-out .3s forwards; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes close-ring { to { stroke-dashoffset: 0; } }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes pop { from { transform: scale(.9); opacity: 0; } }
+    @keyframes fade-in { from { opacity: 0; } }
+    @keyframes fade-out { to { opacity: 0; visibility: hidden; } }
+    @media (prefers-reduced-motion: reduce) {
+      .updating, .card, .ring { animation: none; }
+      .done .ring, .done .tick { animation: none; stroke-dashoffset: 0; }
+      .updating.done { animation: fade-out 0s 1.4s forwards; }
+    }
     @media (max-width: 640px) {
       header { gap: 4px; padding: 0 4px; }
       .brand { display: none; }
@@ -70,6 +108,9 @@ export class Shell {
   private notify = inject(NotifyService);
   protected version = signal(''); // the version this page was loaded with
   protected newVersion = signal(''); // set when the server runs a different one
+  protected phase = signal<'' | 'updating' | 'done'>(''); // the full-screen update animation
+  protected target = signal(''); // the version being updated to
+  protected resumed = false; // this page was loaded by 刷新更新
   protected autoCheck = readAutoCheck();
   private timer = 0;
   // The menu is the child routes of this shell, so a new page is added in one place: app.routes.ts.
@@ -78,7 +119,16 @@ export class Shell {
     .map(r => ({ path: '/' + r.path, label: r.data!['label'] as string, perm: r.data!['perm'] as string | undefined }));
 
   constructor() {
-    this.http.get<{ version: string }>('/api/version').subscribe(v => this.version.set(v.version));
+    // Just reloaded by 刷新更新: keep the animation going until the version is known, then finish it.
+    const updatingTo = takeUpdating();
+    if (updatingTo) { this.target.set(updatingTo); this.phase.set('updating'); this.resumed = true; }
+    this.http.get<{ version: string }>('/api/version').subscribe({
+      next: v => {
+        this.version.set(v.version);
+        if (updatingTo) this.finishUpdate();
+      },
+      error: () => this.phase.set(''),
+    });
     this.setAutoCheck(this.autoCheck);
     inject(DestroyRef).onDestroy(() => clearInterval(this.timer));
   }
@@ -98,7 +148,26 @@ export class Shell {
   }
 
   /** A page with unsaved edits asks before it is left (its beforeunload handler). */
-  reload() { location.reload(); }
+  reload() {
+    this.target.set(this.newVersion());
+    this.phase.set('updating');
+    try { sessionStorage.setItem(UPDATING_KEY, this.newVersion()); } catch { /* the new page then just loads without the animation */ }
+    // A short pause so the animation is seen; then reload. If the user stays (cancels the unsaved-edits
+    // question), the page is still here after the pause and the animation is taken down.
+    setTimeout(() => {
+      location.reload();
+      setTimeout(() => { this.phase.set(''); takeUpdating(); }, 2000);
+    }, 600);
+  }
+
+  private finishUpdate() {
+    this.phase.set('done');
+    setTimeout(() => this.phase.set(''), 1800); // after the fade-out in the styles
+  }
+}
+
+function takeUpdating() {
+  try { const v = sessionStorage.getItem(UPDATING_KEY); sessionStorage.removeItem(UPDATING_KEY); return v ?? ''; } catch { return ''; }
 }
 
 function readAutoCheck() {
