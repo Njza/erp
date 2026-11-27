@@ -13,9 +13,15 @@ BODY=
 # Leaves the response body in $BODY.
 check() {
   local status
-  status=$(curl -s -o "$BODY_FILE" -D "$HEAD_FILE" -w '%{http_code}' -X "$4" "$API$5" \
-    -H "Authorization: Bearer $6" -H 'Content-Type: application/json' -d "${7:-}" \
-    -H "X-Forwarded-For: 10.$((RANDOM % 250)).$((RANDOM % 250)).$((RANDOM % 250))") # a new client each time, so the login rate limit stays out of the way
+  while :; do
+    status=$(curl -s -o "$BODY_FILE" -D "$HEAD_FILE" -w '%{http_code}' -X "$4" "$API$5" \
+      -H "Authorization: Bearer $6" -H 'Content-Type: application/json' -d "${7:-}" \
+      -H "X-Forwarded-For: 10.$((RANDOM % 250)).$((RANDOM % 250)).$((RANDOM % 250))") # a new client each time, so the login rate limit stays out of the way
+    # Behind the web container's nginx the header above is replaced, so all logins share one
+    # client and hit the limit: wait for the next window and try again.
+    [ "$status" = 429 ] && [ "$2" != 429 ] || break
+    echo "...  $1: rate limited, waiting for the next window"; sleep 61
+  done
   BODY=$(cat "$BODY_FILE")
   if [ "$status" != "$2" ] || { [ "$3" != - ] && [ "$(jq -r .code <<<"$BODY")" != "$3" ]; }; then
     echo "FAIL $1: got $status, want $2 $3. Body: $BODY"; exit 1
