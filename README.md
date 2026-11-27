@@ -79,8 +79,11 @@ rm erp-deploy erp-deploy.pub
 
 ## Run for development
 
+The database is the machine's shared Postgres from `local-infra` (localhost:5432, database
+`erp`, role `erp`, password `erp_dev`). On a fresh machine create them once:
+`psql -U local_admin -d postgres -c "CREATE ROLE erp LOGIN PASSWORD 'erp_dev'" -c "CREATE DATABASE erp OWNER erp"`.
+
 ```bash
-docker compose -f docker-compose.dev.yml up -d    # local Postgres on localhost:5433
 cd api && dotnet run --launch-profile http        # API on :5283; settings from appsettings.Development.json
 cd web && npm start                               # UI on :4200 with live reload; proxies /api to :5283
 ./smoke.sh                                        # 22 checks: login, RBAC, error contract
@@ -90,7 +93,7 @@ Sign in as `admin` with `Seed:AdminPassword` from `api/appsettings.Development.j
 The values in that file are development defaults; the deployment never reads them.
 
 To try the deployment stack on your own machine, point `.env` at the dev database:
-`DB_NETWORK=erp-dev`, `DB_HOST=db`, `DB_USER=erp`, `DB_PASSWORD=erp_dev`; then
+`DB_NETWORK=local-infra`, `DB_HOST=shared-postgres`, `DB_USER=erp`, `DB_PASSWORD=erp_dev`; then
 `docker compose up -d --build` and `./smoke.sh http://localhost:8080/api`.
 
 ## Layout
@@ -119,7 +122,6 @@ web/src/app/
   catalog/                 products, names (customers, staff)
 web/Dockerfile, web/nginx.conf
 docker-compose.yml       deployment: api + web
-docker-compose.dev.yml   development: local Postgres only
 .env.example
 ```
 
