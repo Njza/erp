@@ -1,6 +1,8 @@
 import { HttpClient } from '@angular/common/http';
 import { Component, ElementRef, OnInit, computed, inject, input, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { AuthService } from '../core/auth';
 import { firstValueFrom } from 'rxjs';
 import { NotifyService } from '../core/notify';
 
@@ -25,6 +27,9 @@ interface NameOption { id: number; name: string }
           <tr>
             <td>{{ n.name }}</td>
             <td class="actions">
+              @if (canSeeBills) {
+                <button (click)="router.navigate(['/'], { queryParams: { q: n.name } })">历史单据</button>
+              }
               <button (click)="open(n)">编辑</button>
               <button (click)="remove(n)">删除</button>
             </td>
@@ -58,6 +63,8 @@ export class NameList implements OnInit {
   private notify = inject(NotifyService);
   private dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
+  canSeeBills = inject(AuthService).has('bill.read');
+  router = inject(Router);
   names = signal<NameOption[]>([]);
   q = signal('');
   shown = computed(() => {

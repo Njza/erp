@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { ChangeDetectorRef, Component, DestroyRef, ElementRef, afterNextRender, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../core/auth';
 import { NotifyService } from '../core/notify';
@@ -74,7 +75,7 @@ const num = (n: number) => String(+n.toFixed(2));
       <dialog #history class="history">
         <h2>历史记录</h2>
         <form class="search" (ngSubmit)="loadHistory(1)">
-          <input name="q" [(ngModel)]="q" placeholder="单据编号或使用单位" aria-label="搜索单据编号或使用单位">
+          <input name="q" [(ngModel)]="q" placeholder="单据编号、使用单位、经手人或维修安装员" aria-label="搜索单据编号、使用单位、经手人或维修安装员">
           <button>搜索</button>
         </form>
         <table class="scroll">
@@ -418,8 +419,11 @@ export class PartsBill {
     // The browser takes the paper size from @page, which cannot be bound in a template.
     this.suggestNo();
     const destroyRef = inject(DestroyRef);
+    // 客户管理 and 人员管理 link here with ?q=<name> to show that person's bills.
+    const q = inject(ActivatedRoute).snapshot.queryParamMap.get('q');
     afterNextRender(() => {
       this.first().nativeElement.focus();
+      if (q) { this.q = q; this.openHistory(); }
       const sheetWidth = 9.5 * 96; // CSS pixels
       const watcher = new ResizeObserver(([box]) => this.zoom.set(Math.min(1, box.contentRect.width / sheetWidth)));
       watcher.observe(this.preview().nativeElement);

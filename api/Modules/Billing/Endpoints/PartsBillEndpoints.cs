@@ -27,14 +27,14 @@ public static class PartsBillEndpoints
     {
         var g = api.MapGroup("/parts-bills");
 
-        // Newest first. q matches the bill number or the customer.
+        // Newest first. q matches the bill number, the customer, the handler or the installer.
         g.MapGet("", async (string? q, int? page, AppDb db) =>
         {
             var query = db.PartsBills.AsQueryable();
             if (!string.IsNullOrWhiteSpace(q))
             {
                 var term = q.Trim();
-                query = query.Where(b => b.No.Contains(term) || b.Customer.Contains(term));
+                query = query.Where(b => b.No.Contains(term) || b.Customer.Contains(term) || b.Handler.Contains(term) || b.Installer.Contains(term));
             }
             var total = await query.CountAsync();
             var items = await query.OrderByDescending(b => b.Date).ThenByDescending(b => b.No)
