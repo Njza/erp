@@ -419,11 +419,11 @@ export class PartsBill {
     // The browser takes the paper size from @page, which cannot be bound in a template.
     this.suggestNo();
     const destroyRef = inject(DestroyRef);
-    // 客户管理 and 人员管理 link here with ?q=<name> to show that person's bills.
-    const q = inject(ActivatedRoute).snapshot.queryParamMap.get('q');
+    // 客户管理 and 人员管理 link here with ?bill=<id> to open that bill.
+    const billId = Number(inject(ActivatedRoute).snapshot.queryParamMap.get('bill'));
     afterNextRender(() => {
       this.first().nativeElement.focus();
-      if (q) { this.q = q; this.openHistory(); }
+      if (billId) this.open(billId);
       const sheetWidth = 9.5 * 96; // CSS pixels
       const watcher = new ResizeObserver(([box]) => this.zoom.set(Math.min(1, box.contentRect.width / sheetWidth)));
       watcher.observe(this.preview().nativeElement);

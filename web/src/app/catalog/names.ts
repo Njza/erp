@@ -7,6 +7,7 @@ import { firstValueFrom } from 'rxjs';
 import { NotifyService } from '../core/notify';
 
 interface NameOption { id: number; name: string }
+interface BillSummary { id: number; no: string; date: string; customer: string; handler: string; total: number; printCount: number }
 
 /** One editable list of names from /api/names/<kind>: add, rename, search, delete. */
 @Component({
@@ -28,7 +29,7 @@ interface NameOption { id: number; name: string }
             <td>{{ n.name }}</td>
             <td class="actions">
               @if (canSeeBills) {
-                <button (click)="router.navigate(['/'], { queryParams: { q: n.name } })">历史单据</button>
+                <button (click)="openHistory(n.name)">历史单据</button>
               }
               <button (click)="open(n)">编辑</button>
               <button (click)="remove(n)">删除</button>
@@ -41,6 +42,31 @@ interface NameOption { id: number; name: string }
     </table>
     <p class="muted">共 {{ names().length }} 个。在单据上填了这里没有的名称，保存单据时会自动加进来。</p>
 
+    <dialog #history class="history">
+      <h2>{{ historyName }} 的历史单据</h2>
+      <table class="scroll">
+        <thead><tr><th>单据编号</th><th>日期</th><th>使用单位</th><th>经手人</th><th class="r">合计</th><th>打印</th><th></th></tr></thead>
+        <tbody>
+          @for (b of bills().items; track b.id) {
+            <tr>
+              <td>{{ b.no }}</td><td>{{ b.date }}</td><td>{{ b.customer }}</td><td>{{ b.handler }}</td>
+              <td class="r">{{ +b.total.toFixed(2) }}</td>
+              <td [class.unprinted]="!b.printCount">{{ b.printCount ? '已打印 ' + b.printCount + ' 次' : '未打印' }}</td>
+              <td class="actions"><button (click)="router.navigate(['/'], { queryParams: { bill: b.id } })">{{ canEditBills ? '修改' : '打开' }}</button></td>
+            </tr>
+          } @empty {
+            <tr><td colspan="7" class="muted">没有单据。</td></tr>
+          }
+        </tbody>
+      </table>
+      <menu>
+        <span class="muted">共 {{ bills().total }} 张，第 {{ page }} / {{ pages() }} 页</span>
+        <button type="button" [disabled]="page <= 1" (click)="loadHistory(page - 1)">上一页</button>
+        <button type="button" [disabled]="page >= pages()" (click)="loadHistory(page + 1)">下一页</button>
+        <button type="button" (click)="history.close()">关闭</button>
+      </menu>
+    </dialog>
+
     <dialog #dialog>
       <form ngNativeValidate (ngSubmit)="save()">
         <h2>{{ form.id ? '编辑' : '新建' }}{{ noun() }}</h2>
@@ -52,7 +78,14 @@ interface NameOption { id: number; name: string }
       </form>
     </dialog>
   `,
-  styles: `:host { display: block; margin-bottom: 32px; }`,
+  styles: `
+    :host { display: block; margin-bottom: 32px; }
+    dialog.history { width: min(100%, 860px); }
+    .history .r { text-align: right; }
+    .history .unprinted { color: var(--danger); }
+    .history menu { align-items: center; }
+    .history menu span { margin-right: auto; }
+  `,
 })
 export class NameList implements OnInit {
   kind = input.required<'customer' | 'handler' | 'installer'>();
@@ -64,7 +97,15 @@ export class NameList implements OnInit {
   private dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   canSeeBills = inject(AuthService).has('bill.read');
+  canEditBills = inject(AuthService).has('bill.write');
   router = inject(Router);
+  private historyDialog = viewChild.required<ElementRef<HTMLDialogElement>>('history');
+  // shortcut: the server search matches any part of the number, customer, handler or installer,
+  // so a name inside a longer name also lists that one's bills; add exact-name filters if it confuses people.
+  historyName = '';
+  page = 1;
+  bills = signal<{ items: BillSummary[]; total: number; pageSize: number }>({ items: [], total: 0, pageSize: 20 });
+  pages() { return Math.max(1, Math.ceil(this.bills().total / this.bills().pageSize)); }
   names = signal<NameOption[]>([]);
   q = signal('');
   shown = computed(() => {
@@ -78,6 +119,19 @@ export class NameList implements OnInit {
   ngOnInit() { this.load(); } // inputs are not set yet in the constructor
 
   load() { this.http.get<NameOption[]>(this.url).subscribe(n => this.names.set(n)); }
+
+  openHistory(name: string) {
+    this.historyName = name;
+    this.bills.set({ items: [], total: 0, pageSize: 20 });
+    this.historyDialog().nativeElement.showModal();
+    this.loadHistory(1);
+  }
+
+  loadHistory(page: number) {
+    this.page = page;
+    this.http.get<{ items: BillSummary[]; total: number; pageSize: number }>('/api/parts-bills', { params: { q: this.historyName, page } })
+      .subscribe(r => this.bills.set(r));
+  }
 
   open(n?: NameOption) {
     this.form = n ? { ...n } : { id: 0, name: '' };
