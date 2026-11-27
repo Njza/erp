@@ -85,7 +85,12 @@ const num = (n: number) => String(+n.toFixed(2));
                 <td>{{ b.no }}</td><td>{{ b.date }}</td><td>{{ b.customer }}</td><td>{{ b.handler }}</td>
                 <td class="r">{{ numText(b.total) }}</td>
                 <td [class.unprinted]="!b.printCount">{{ printText(b.printCount) }}</td>
-                <td class="actions"><button (click)="open(b.id)">打开</button></td>
+                <!-- Each action loads the bill into the page first: printing and the PDF use the page's sheet. -->
+                <td class="actions">
+                  <button (click)="open(b.id)">{{ canWrite ? '修改' : '打开' }}</button>
+                  <button (click)="openThen(b.id, 'print')">打印</button>
+                  <button [disabled]="busy()" (click)="openThen(b.id, 'pdf')">下载PDF</button>
+                </td>
               </tr>
             } @empty {
               <tr><td colspan="7" class="muted">没有单据。</td></tr>
@@ -261,7 +266,7 @@ const num = (n: number) => String(+n.toFixed(2));
   styles: `
     .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
     h1 small, h2 small { font-size: 12px; font-weight: normal; margin-left: 8px; }
-    dialog.history { width: min(100%, 820px); }
+    dialog.history { width: min(100%, 980px); } /* room for three buttons per row */
     .search { display: flex; gap: 8px; margin-bottom: 12px; }
     .search input { flex: 1; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
     .history .r { text-align: right; }
@@ -634,10 +639,17 @@ export class PartsBill {
       .subscribe(r => this.list.set(r));
   }
 
-  async open(id: number) {
-    if (!this.discardOk()) return;
+  /** Opens a bill from the history, then prints it or downloads its PDF. */
+  async openThen(id: number, then: 'print' | 'pdf') {
+    if (!(await this.open(id))) return;
+    this.view.detectChanges(); // the sheet must show this bill before the print dialog takes its picture
+    if (then === 'print') this.print(); else await this.downloadPdf();
+  }
+
+  async open(id: number): Promise<boolean> {
+    if (!this.discardOk()) return false;
     let saved: Bill, printCount: number;
-    try { ({ printCount, ...saved } = await firstValueFrom(this.http.get<Bill & { printCount: number }>(`/api/parts-bills/${id}`))); } catch { return; }
+    try { ({ printCount, ...saved } = await firstValueFrom(this.http.get<Bill & { printCount: number }>(`/api/parts-bills/${id}`))); } catch { return false; }
     // The form always has MAX_ROWS lines; the server stores only the used ones.
     const rows = [...saved.rows, ...Array.from({ length: MAX_ROWS - saved.rows.length }, blankRow)];
     this.bill = { ...this.blankBill(), ...saved, rows };
@@ -645,6 +657,7 @@ export class PartsBill {
     this.savedJson = JSON.stringify(this.bill);
     this.view.markForCheck();
     this.historyDialog().nativeElement.close();
+    return true;
   }
 
   private discardOk() {
