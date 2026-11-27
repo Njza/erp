@@ -419,11 +419,12 @@ export class PartsBill {
     // The browser takes the paper size from @page, which cannot be bound in a template.
     this.suggestNo();
     const destroyRef = inject(DestroyRef);
-    // 客户管理 and 人员管理 link here with ?bill=<id> to open that bill.
-    const billId = Number(inject(ActivatedRoute).snapshot.queryParamMap.get('bill'));
+    // 客户管理 and 人员管理 link here with ?bill=<id> to open that bill, and &then=print|pdf to print it or download its PDF.
+    const params = inject(ActivatedRoute).snapshot.queryParamMap;
+    const billId = Number(params.get('bill')), then = params.get('then');
     afterNextRender(() => {
       this.first().nativeElement.focus();
-      if (billId) this.open(billId);
+      if (billId) { if (then === 'print' || then === 'pdf') this.openThen(billId, then); else this.open(billId); }
       const sheetWidth = 9.5 * 96; // CSS pixels
       const watcher = new ResizeObserver(([box]) => this.zoom.set(Math.min(1, box.contentRect.width / sheetWidth)));
       watcher.observe(this.preview().nativeElement);

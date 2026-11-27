@@ -52,7 +52,12 @@ interface BillSummary { id: number; no: string; date: string; customer: string; 
               <td>{{ b.no }}</td><td>{{ b.date }}</td><td>{{ b.customer }}</td><td>{{ b.handler }}</td>
               <td class="r">{{ +b.total.toFixed(2) }}</td>
               <td [class.unprinted]="!b.printCount">{{ b.printCount ? '已打印 ' + b.printCount + ' 次' : '未打印' }}</td>
-              <td class="actions"><button (click)="router.navigate(['/'], { queryParams: { bill: b.id } })">{{ canEditBills ? '修改' : '打开' }}</button></td>
+              <!-- Printing and the PDF need the sheet on the print page, so these go there too. -->
+              <td class="actions">
+                <button (click)="router.navigate(['/'], { queryParams: { bill: b.id } })">{{ canEditBills ? '修改' : '打开' }}</button>
+                <button (click)="router.navigate(['/'], { queryParams: { bill: b.id, then: 'print' } })">打印</button>
+                <button (click)="router.navigate(['/'], { queryParams: { bill: b.id, then: 'pdf' } })">下载PDF</button>
+              </td>
             </tr>
           } @empty {
             <tr><td colspan="7" class="muted">没有单据。</td></tr>
@@ -80,7 +85,7 @@ interface BillSummary { id: number; no: string; date: string; customer: string; 
   `,
   styles: `
     :host { display: block; margin-bottom: 32px; }
-    dialog.history { width: min(100%, 860px); }
+    dialog.history { width: min(100%, 980px); }
     .history .r { text-align: right; }
     .history .unprinted { color: var(--danger); }
     .history menu { align-items: center; }
